@@ -1584,7 +1584,7 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                   ),
                   // Информация о механиках
                   if (mechanicsCount > 0)
-                    Padding(
+                    /*Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Row(
                         children: [
@@ -1599,7 +1599,7 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                           ),
                         ],
                       ),
-                    ),
+                    ),*/
                   const SizedBox(height: 8),
                   // Статус заявки и кнопка чека
                   Row(
@@ -2131,7 +2131,7 @@ class RequestDetailsScreen extends StatelessWidget {
               ),
             
             // Секция механиков
-            if (mechanics.isNotEmpty)
+            /*if (mechanics.isNotEmpty)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -2158,7 +2158,7 @@ class RequestDetailsScreen extends StatelessWidget {
                     );
                   }),
                 ],
-              ),
+              ),*/
             
             // Фото транспорта (если есть)
             if (transport.photo != null && transport.photo!.isNotEmpty)

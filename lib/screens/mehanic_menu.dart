@@ -480,7 +480,7 @@ class _MechanicMenuState extends State<MechanicMenu> {
           onCompleteRequest: () => _completeRequest(request),
           onUpdateStatus: () => _showStatusChangeDialog(request),
           onTemporaryReject: () => _temporarilyRejectRequest(request),
-          onRedirectRequest: () => _redirectRequest(request),
+          //onRedirectRequest: () => _redirectRequest(request),
           isMechanic: true,
           isCompletedByMe: _requestCompletionStatus[request.id] == "completed",
         ),
@@ -642,7 +642,7 @@ class _MechanicMenuState extends State<MechanicMenu> {
   }
 
   // МЕТОД ДЛЯ ПЕРЕНАПРАВЛЕНИЯ ЗАЯВКИ
-  Future<void> _redirectRequest(Request request) async {
+  /*Future<void> _redirectRequest(Request request) async {
     try {
       // Фильтруем механиков: исключаем текущего пользователя и оставляем только механиков из того же сервиса
       final availableMechanics = mechanics.where((mechanic) =>
@@ -716,10 +716,10 @@ class _MechanicMenuState extends State<MechanicMenu> {
     } catch (e) {
       _showError('Ошибка перенаправления заявки: $e');
     }
-  }
+  }*/
 
   // Выполнение перенаправления заявки
-  Future<void> _performRequestRedirect(Request request, Mechanic newMechanic) async {
+  /*Future<void> _performRequestRedirect(Request request, Mechanic newMechanic) async {
     try {
       // Получаем текущих механиков заявки
       List<int> currentMechanicIds = [];
@@ -776,7 +776,7 @@ class _MechanicMenuState extends State<MechanicMenu> {
     } catch (e) {
       _showError('Ошибка перенаправления заявки: $e');
     }
-  }
+  }*/
 
   // Метод для удаления себя из заявки
   Future<void> _removeMyselfFromRequest(Request request) async {
@@ -1600,7 +1600,7 @@ class RequestDetailsScreen extends StatelessWidget {
   final VoidCallback onCompleteRequest;
   final VoidCallback onUpdateStatus;
   final VoidCallback onTemporaryReject;
-  final VoidCallback onRedirectRequest;
+  //final VoidCallback onRedirectRequest;
   final bool isMechanic;
   final bool isCompletedByMe;
 
@@ -1613,7 +1613,7 @@ class RequestDetailsScreen extends StatelessWidget {
     required this.onCompleteRequest,
     required this.onUpdateStatus,
     required this.onTemporaryReject,
-    required this.onRedirectRequest,
+    //required this.onRedirectRequest,
     required this.isMechanic,
     required this.isCompletedByMe,
   });
@@ -2035,7 +2035,7 @@ class RequestDetailsScreen extends StatelessWidget {
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            Expanded(
+                            /*Expanded(
                               child: ElevatedButton(
                                 onPressed: onRedirectRequest,
                                 style: ElevatedButton.styleFrom(
@@ -2054,7 +2054,7 @@ class RequestDetailsScreen extends StatelessWidget {
                                   ],
                                 ),
                               ),
-                            ),
+                            ),*/
                             const SizedBox(width: 12),
                             Expanded(
                               child: ElevatedButton(
@@ -2090,7 +2090,7 @@ class RequestDetailsScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        Center(
+                        /*Center(
                           child: ElevatedButton(
                             onPressed: onRedirectRequest,
                             style: ElevatedButton.styleFrom(
@@ -2109,7 +2109,7 @@ class RequestDetailsScreen extends StatelessWidget {
                               ],
                             ),
                           ),
-                        ),
+                        ),*/
                       ],
                     ),
                   const SizedBox(height: 16),
