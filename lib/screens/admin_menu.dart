@@ -2,8 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
-
-const String baseUrl = 'https://jvvrlmfl-3000.euw.devtunnels.ms';
+import '../global_config.dart';
 
 class AdminMenu extends StatefulWidget {
   const AdminMenu({super.key});
@@ -55,6 +54,7 @@ class _AdminMenuState extends State<AdminMenu> with SingleTickerProviderStateMix
 void initState() {
   super.initState();
   _tabController = TabController(length: 6, vsync: this);
+  _loadSavedServerUrl();
   _loadAllData();
   _loadAdminSettings();
   
@@ -66,6 +66,16 @@ void initState() {
       _loadMechanics();
     }
   });
+}
+
+Future<void> _loadSavedServerUrl() async {
+  final prefs = await SharedPreferences.getInstance();
+  final savedUrl = prefs.getString('server_url');
+  if (savedUrl != null && savedUrl.isNotEmpty) {
+    GlobalConfig.updateServerUrl(savedUrl);
+  }
+  // Обновляем контроллер в UI
+  _serverUrlController.text = GlobalConfig.serverUrl;
 }
 
   @override
@@ -112,20 +122,39 @@ void initState() {
     final prefs = await SharedPreferences.getInstance();
     _adminEmailController.text = prefs.getString('admin_email') ?? 'admin@admin.com';
     _adminPasswordController.text = prefs.getString('admin_password') ?? 'admin123';
-    _serverUrlController.text = prefs.getString('server_url') ?? baseUrl;
   }
 
   Future<void> _saveAdminSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('admin_email', _adminEmailController.text.trim());
-    await prefs.setString('admin_password', _adminPasswordController.text.trim());
-    await prefs.setString('server_url', _serverUrlController.text.trim());
-    _showSuccess('Настройки сохранены');
+    final newUrl = _serverUrlController.text.trim();
+    
+    if (newUrl.isEmpty) {
+      _showError('Введите URL сервера');
+      return;
+    }
+
+    try {
+      // Обновляем URL в GlobalConfig
+      GlobalConfig.updateServerUrl(newUrl);
+      
+      // Сохраняем настройки в SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('admin_email', _adminEmailController.text.trim());
+      await prefs.setString('admin_password', _adminPasswordController.text.trim());
+      await prefs.setString('server_url', newUrl);
+      
+      _showSuccess('Настройки сохранены');
+      
+      // Опционально: перезагрузить данные с нового сервера
+      await _loadAllData();
+      
+    } catch (e) {
+      _showError('Ошибка сохранения настроек: $e');
+    }
   }
 
   Future<void> _loadApplicants() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/applicants'));
+      final response = await http.get(Uri.parse('${GlobalConfig.serverUrl}/applicants'));
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         setState(() {
@@ -139,7 +168,7 @@ void initState() {
 
   Future<void> _loadManagers() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/managers'));
+      final response = await http.get(Uri.parse('${GlobalConfig.serverUrl}/managers'));
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         setState(() {
@@ -153,7 +182,7 @@ void initState() {
 
   Future<void> _loadMechanics() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/mechanics'));
+      final response = await http.get(Uri.parse('${GlobalConfig.serverUrl}/mechanics'));
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         setState(() {
@@ -167,7 +196,7 @@ void initState() {
 
   Future<void> _loadServices() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/services-with-details'));
+      final response = await http.get(Uri.parse('${GlobalConfig.serverUrl}/services-with-details'));
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         setState(() {
@@ -181,7 +210,7 @@ void initState() {
 
   Future<void> _loadRequests() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/requests'));
+      final response = await http.get(Uri.parse('${GlobalConfig.serverUrl}/requests'));
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         setState(() {
@@ -195,7 +224,7 @@ void initState() {
 
   Future<void> _loadTransports() async {
     try {
-      final response = await http.get(Uri.parse('$baseUrl/transports'));
+      final response = await http.get(Uri.parse('${GlobalConfig.serverUrl}/transports'));
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
         setState(() {
@@ -216,7 +245,7 @@ void initState() {
 
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/services'),
+        Uri.parse('${GlobalConfig.serverUrl}/services'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'address': _serviceAddressController.text.trim(),
@@ -297,7 +326,7 @@ void initState() {
 
     try {
       final response = await http.put(
-        Uri.parse('$baseUrl/services/$serviceId'),
+        Uri.parse('${GlobalConfig.serverUrl}/services/$serviceId'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'address': _editServiceAddressController.text.trim(),
@@ -348,7 +377,7 @@ Future<void> _deleteServiceSimple(int id) async {
   if (confirmed != true) return;
 
   try {
-    final response = await http.delete(Uri.parse('$baseUrl/services/$id/cascade'));
+    final response = await http.delete(Uri.parse('${GlobalConfig.serverUrl}/services/$id/cascade'));
     
     print('Cascade delete response: ${response.statusCode}');
     print('Response body: ${response.body}');
@@ -395,7 +424,7 @@ Future<void> _createManager() async {
     print('Отправка данных менеджера: $requestData');
 
     final response = await http.post(
-      Uri.parse('$baseUrl/managers'),
+      Uri.parse('${GlobalConfig.serverUrl}/managers'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode(requestData),
     );
@@ -517,7 +546,7 @@ Future<void> _createManager() async {
       }
 
       final response = await http.put(
-        Uri.parse('$baseUrl/managers/$id'),
+        Uri.parse('${GlobalConfig.serverUrl}/managers/$id'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode(requestData),
       );
@@ -562,7 +591,7 @@ Future<void> _createManager() async {
     if (confirmed != true) return;
 
     try {
-      final response = await http.delete(Uri.parse('$baseUrl/managers/$id'));
+      final response = await http.delete(Uri.parse('${GlobalConfig.serverUrl}/managers/$id'));
       
       print('Delete manager response: ${response.statusCode}');
       print('Response body: ${response.body}');
@@ -600,7 +629,7 @@ Future<void> _createManager() async {
     print('Отправка данных механика: $requestData');
 
     final response = await http.post(
-      Uri.parse('$baseUrl/mechanics'),
+      Uri.parse('${GlobalConfig.serverUrl}/mechanics'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode(requestData),
     );
@@ -722,7 +751,7 @@ Future<void> _createManager() async {
       }
 
       final response = await http.put(
-        Uri.parse('$baseUrl/mechanics/$id'),
+        Uri.parse('${GlobalConfig.serverUrl}/mechanics/$id'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode(requestData),
       );
@@ -767,7 +796,7 @@ Future<void> _createManager() async {
     if (confirmed != true) return;
 
     try {
-      final response = await http.delete(Uri.parse('$baseUrl/mechanics/$id'));
+      final response = await http.delete(Uri.parse('${GlobalConfig.serverUrl}/mechanics/$id'));
       
       print('Delete mechanic response: ${response.statusCode}');
       print('Response body: ${response.body}');
@@ -809,7 +838,7 @@ Future<void> _createManager() async {
     if (confirmed != true) return;
 
     try {
-      final response = await http.delete(Uri.parse('$baseUrl/applicants/$id'));
+      final response = await http.delete(Uri.parse('${GlobalConfig.serverUrl}/applicants/$id'));
       
       print('Delete applicant response: ${response.statusCode}');
       print('Response body: ${response.body}');
@@ -892,7 +921,7 @@ Future<void> _createManager() async {
                               children: [
                                 Text('Email: ${applicant.email}'),
                                 Text('Роль: ${applicant.role}'),
-                                Text('Заявок: ${applicant.requests?.length ?? 0}'),
+                                //Text('Заявок: ${applicant.requests?.length ?? 0}'),
                               ],
                             ),
                             trailing: IconButton(
@@ -924,7 +953,7 @@ Future<void> _createManager() async {
               Text('Email: ${applicant.email}'),
               Text('Роль: ${applicant.role}'),
               const SizedBox(height: 16),
-              const Text('Заявки:', style: TextStyle(fontWeight: FontWeight.bold)),
+              /*const Text('Заявки:', style: TextStyle(fontWeight: FontWeight.bold)),
               ...(applicant.requests ?? []).take(5).map((request) => 
                 ListTile(
                   title: Text(request['problem'] ?? 'Описание не указано'),
@@ -933,7 +962,7 @@ Future<void> _createManager() async {
                 )
               ).toList(),
               if ((applicant.requests?.length ?? 0) > 5)
-                const Text('... и другие заявки'),
+                const Text('... и другие заявки'),*/
             ],
           ),
         ),
@@ -1483,7 +1512,7 @@ Future<void> _loadServicesAndResetSelection() async {
   }
 
   // Вкладка заявок
-  Widget _buildRequestsTab() {
+  /*Widget _buildRequestsTab() {
     return Column(
       children: [
         Padding(
@@ -1538,9 +1567,9 @@ Future<void> _loadServicesAndResetSelection() async {
         ),
       ],
     );
-  }
+  }*/
 
-  void _showRequestDetails(Request request) {
+  /*void _showRequestDetails(Request request) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1572,7 +1601,7 @@ Future<void> _loadServicesAndResetSelection() async {
         ],
       ),
     );
-  }
+  }*/
 
   // Вкладка настроек
   Widget _buildSettingsTab() {
@@ -1651,7 +1680,7 @@ Future<void> _loadServicesAndResetSelection() async {
             Tab(icon: Icon(Icons.manage_accounts), text: 'Менеджеры'),
             Tab(icon: Icon(Icons.engineering), text: 'Механики'),
             Tab(icon: Icon(Icons.business), text: 'Сервисы'),
-            Tab(icon: Icon(Icons.list_alt), text: 'Заявки'),
+            //Tab(icon: Icon(Icons.list_alt), text: 'Заявки'),
             Tab(icon: Icon(Icons.settings), text: 'Настройки'),
           ],
         ),
@@ -1663,7 +1692,7 @@ Future<void> _loadServicesAndResetSelection() async {
           _buildManagersTab(),
           _buildMechanicsTab(),
           _buildServicesTab(),
-          _buildRequestsTab(),
+          //_buildRequestsTab(),
           _buildSettingsTab(),
         ],
       ),

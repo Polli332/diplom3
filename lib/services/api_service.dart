@@ -6,7 +6,7 @@ import '../global_config.dart';
 
 class ApiService {
   // ЗАМЕНИ на твой публичный URL
-  static const String baseUrl = 'https://jvvrlmfl-3000.euw.devtunnels.ms';
+  static const String baseUrl = 'https://jds25q4d-8003.euw.devtunnels.ms';
 
   // helper: GET all from endpoint
   static Future<List<dynamic>> _getAll(String path) async {

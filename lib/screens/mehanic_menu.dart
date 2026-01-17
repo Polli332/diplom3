@@ -5,8 +5,10 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:file_picker/file_picker.dart';
+import '../global_config.dart';
 
-const String baseUrl = 'https://jvvrlmfl-3000.euw.devtunnels.ms';
+final String baseUrl = GlobalConfig.baseUrl;
+
 
 class MechanicMenu extends StatefulWidget {
   const MechanicMenu({super.key});
@@ -41,6 +43,7 @@ class _MechanicMenuState extends State<MechanicMenu> {
   // Добавлен список статусов для механика
   final List<String> _statusList = ['новая', 'принята', 'в работе', 'временно отклонена', 'завершена'];
   final Map<int, String> _requestCompletionStatus = {}; // requestId -> "completed" или "not_completed"
+  final Map<int, List<RepairDetail>> _repairDetailsByRequest = {}; // requestId -> список деталей ремонта
 
   @override
   void initState() {
@@ -256,7 +259,7 @@ class _MechanicMenuState extends State<MechanicMenu> {
     }
   }
 
-  // ИСПРАВЛЕН: Загрузка заявок механика через связующую таблицу
+  // Загрузка заявок механика
   Future<void> _loadMechanicRequests() async {
     try {
       print('Загрузка заявок для механика $userId');
@@ -295,6 +298,8 @@ class _MechanicMenuState extends State<MechanicMenu> {
         
         // Загружаем статус завершения для каждой заявки
         await _loadCompletionStatusForRequests();
+        // Загружаем детали ремонта для каждой заявки
+        await _loadRepairDetailsForAllRequests();
       } else {
         // Fallback: загружаем все заявки и фильтруем по нескольким условиям
         print('Все эндпоинты не сработали, используем fallback');
@@ -404,6 +409,41 @@ class _MechanicMenuState extends State<MechanicMenu> {
     }
   }
 
+  // Загрузка деталей ремонта для всех заявок
+  Future<void> _loadRepairDetailsForAllRequests() async {
+    for (var request in requests) {
+      await _loadRepairDetailsForRequest(request.id);
+    }
+  }
+
+  // Загрузка деталей ремонта для конкретной заявки
+  Future<void> _loadRepairDetailsForRequest(int requestId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/requests/$requestId/repair-details/mechanic/$userId'),
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        final List<RepairDetail> details = data.map((item) => RepairDetail.fromJson(item)).toList();
+        
+        setState(() {
+          _repairDetailsByRequest[requestId] = details;
+        });
+      } else if (response.statusCode == 404) {
+        // Если деталей нет, создаем пустой список
+        setState(() {
+          _repairDetailsByRequest[requestId] = [];
+        });
+      }
+    } catch (e) {
+      print('Error loading repair details for request $requestId: $e');
+      setState(() {
+        _repairDetailsByRequest[requestId] = [];
+      });
+    }
+  }
+
   Future<void> _loadServiceMechanics() async {
     try {
       final response = await http.get(Uri.parse('$baseUrl/mechanics'));
@@ -477,18 +517,18 @@ class _MechanicMenuState extends State<MechanicMenu> {
           transports: transports,
           services: services,
           mechanics: mechanics,
-          onCompleteRequest: () => _completeRequest(request),
+          onCompleteRequest: () => _showCompleteWithDetailsDialog(request),
           onUpdateStatus: () => _showStatusChangeDialog(request),
           onTemporaryReject: () => _temporarilyRejectRequest(request),
-          //onRedirectRequest: () => _redirectRequest(request),
           isMechanic: true,
           isCompletedByMe: _requestCompletionStatus[request.id] == "completed",
+          repairDetails: _repairDetailsByRequest[request.id] ?? [],
         ),
       ),
     );
   }
 
-  // ДОБАВЛЕН МЕТОД ДЛЯ ИЗМЕНЕНИЯ СТАТУСА ЗАЯВКИ
+  // Диалог для изменения статуса заявки
   void _showStatusChangeDialog(Request request) {
     String selectedStatus = request.status;
 
@@ -544,7 +584,7 @@ class _MechanicMenuState extends State<MechanicMenu> {
     );
   }
 
-  // ДОБАВЛЕН МЕТОД ОБНОВЛЕНИЯ СТАТУСА ЗАЯВКИ
+  // Обновление статуса заявки
   Future<void> _updateRequestStatus(Request request, String newStatus) async {
     try {
       final Map<String, dynamic> updateData = {'status': newStatus};
@@ -572,8 +612,8 @@ class _MechanicMenuState extends State<MechanicMenu> {
     }
   }
 
-  // Метод для завершения работы механика над заявкой
-  Future<void> _completeRequest(Request request) async {
+  // Метод для завершения работы механика над заявкой (с деталями ремонта)
+  Future<void> _completeRequest(Request request, List<RepairDetail> details) async {
     try {
       // Проверяем, не завершил ли уже механик эту заявку
       if (_requestCompletionStatus[request.id] == "completed") {
@@ -585,9 +625,9 @@ class _MechanicMenuState extends State<MechanicMenu> {
       bool success = false;
       
       final endpoints = [
-        Uri.parse('$baseUrl/requests/${request.id}/mechanics/$userId/complete'),
-        Uri.parse('$baseUrl/mechanic/requests/${request.id}/complete'),
-        Uri.parse('$baseUrl/mechanics/$userId/requests/${request.id}/complete'),
+        Uri.parse('$baseUrl/requests/${request.id}/mechanics/$userId/complete-with-details'),
+        Uri.parse('$baseUrl/mechanic/requests/${request.id}/complete-with-details'),
+        Uri.parse('$baseUrl/mechanics/$userId/requests/${request.id}/complete-with-details'),
       ];
       
       for (var endpoint in endpoints) {
@@ -595,7 +635,9 @@ class _MechanicMenuState extends State<MechanicMenu> {
           final response = await http.put(
             endpoint,
             headers: {'Content-Type': 'application/json'},
-            body: json.encode({}),
+            body: json.encode({
+              'repairDetails': details.map((detail) => detail.toJson()).toList(),
+            }),
           );
 
           if (response.statusCode == 200) {
@@ -607,13 +649,16 @@ class _MechanicMenuState extends State<MechanicMenu> {
               _requestCompletionStatus[request.id] = "completed";
             });
 
+            // Обновляем список деталей ремонта
+            await _loadRepairDetailsForRequest(request.id);
+
             // Проверяем, завершена ли вся заявка
             if (data['allCompleted'] == true) {
               _showSuccess('Вы завершили работу. Все механики завершили работу, заявка закрыта.');
               // Если вся заявка завершена, обновляем ее статус
               await _updateRequestStatus(request, 'завершена');
             } else {
-              _showSuccess('Вы завершили работу над заявкой. Ожидайте завершения другими механиками.');
+              _showSuccess('Вы завершили работу над заявкой. Детали ремонта сохранены.');
             }
 
             // Обновляем список заявок
@@ -633,6 +678,64 @@ class _MechanicMenuState extends State<MechanicMenu> {
       }
       
       if (!success) {
+        // Fallback: пробуем завершить без деталей
+        await _completeRequestWithoutDetails(request);
+      }
+      
+    } catch (e) {
+      _showError('Ошибка завершения заявки: $e');
+    }
+  }
+
+  // Fallback: завершение без деталей
+  Future<void> _completeRequestWithoutDetails(Request request) async {
+    try {
+      final endpoints = [
+        Uri.parse('$baseUrl/requests/${request.id}/mechanics/$userId/complete'),
+        Uri.parse('$baseUrl/mechanic/requests/${request.id}/complete'),
+        Uri.parse('$baseUrl/mechanics/$userId/requests/${request.id}/complete'),
+      ];
+      
+      bool success = false;
+      
+      for (var endpoint in endpoints) {
+        try {
+          final response = await http.put(
+            endpoint,
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({}),
+          );
+
+          if (response.statusCode == 200) {
+            success = true;
+            final data = json.decode(response.body);
+            
+            setState(() {
+              _requestCompletionStatus[request.id] = "completed";
+            });
+
+            if (data['allCompleted'] == true) {
+              _showSuccess('Вы завершили работу. Все механики завершили работу, заявка закрыта.');
+              await _updateRequestStatus(request, 'завершена');
+            } else {
+              _showSuccess('Вы завершили работу над заявкой.');
+            }
+
+            await _loadMechanicRequests();
+            
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            }
+            
+            break;
+          }
+        } catch (e) {
+          print('Ошибка при вызове эндпоинта $endpoint: $e');
+          continue;
+        }
+      }
+      
+      if (!success) {
         _showError('Не удалось завершить заявку. Попробуйте еще раз.');
       }
       
@@ -641,161 +744,189 @@ class _MechanicMenuState extends State<MechanicMenu> {
     }
   }
 
-  // МЕТОД ДЛЯ ПЕРЕНАПРАВЛЕНИЯ ЗАЯВКИ
-  /*Future<void> _redirectRequest(Request request) async {
-    try {
-      // Фильтруем механиков: исключаем текущего пользователя и оставляем только механиков из того же сервиса
-      final availableMechanics = mechanics.where((mechanic) =>
-          mechanic.id != userId &&
-          mechanic.serviceId == serviceId).toList();
+  // Диалог завершения работы с деталями ремонта
+  void _showCompleteWithDetailsDialog(Request request) {
+    final List<RepairDetail> repairDetails = [];
+    final TextEditingController partNameController = TextEditingController();
+    final TextEditingController partNumberController = TextEditingController();
+    final TextEditingController quantityController = TextEditingController();
 
-      if (availableMechanics.isEmpty) {
-        _showError('Нет других механиков в вашем сервисе');
-        return;
-      }
-
-      Mechanic? selectedMechanic;
-
-      bool? result = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext context) {
-          return StatefulBuilder(
-            builder: (context, setState) {
-              return AlertDialog(
-                title: const Text('Перенаправить заявку'),
-                content: SizedBox(
-                  width: double.maxFinite,
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Завершить работу с деталями'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text('Выберите механика для перенаправления заявки:'),
+                      const Text('Введите детали, использованные при ремонте:'),
                       const SizedBox(height: 16),
-                      DropdownButtonFormField<Mechanic>(
-                        value: selectedMechanic,
-                        items: availableMechanics.map((mechanic) {
-                          return DropdownMenuItem<Mechanic>(
-                            value: mechanic,
-                            child: Text(mechanic.name),
-                          );
-                        }).toList(),
-                        onChanged: (Mechanic? newValue) {
-                          setState(() {
-                            selectedMechanic = newValue;
-                          });
-                        },
+                      
+                      // Форма для добавления детали
+                      TextField(
+                        controller: partNameController,
                         decoration: const InputDecoration(
-                          labelText: 'Механик',
+                          labelText: 'Название детали *',
                           border: OutlineInputBorder(),
                         ),
-                        isExpanded: true,
                       ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: partNumberController,
+                        decoration: const InputDecoration(
+                          labelText: 'Номер детали (артикул)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: quantityController,
+                        decoration: const InputDecoration(
+                          labelText: 'Количество *',
+                          border: OutlineInputBorder(),
+                        ),
+                        keyboardType: TextInputType.number,
+                      ),
+                      
+                      const SizedBox(height: 16),
+                      
+                      // Кнопка добавления детали
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          if (partNameController.text.trim().isEmpty) {
+                            _showError('Введите название детали');
+                            return;
+                          }
+                          if (quantityController.text.trim().isEmpty) {
+                            _showError('Введите количество');
+                            return;
+                          }
+                          
+                          final quantity = double.tryParse(quantityController.text.trim());
+                          if (quantity == null || quantity <= 0) {
+                            _showError('Введите корректное количество');
+                            return;
+                          }
+                          
+                          final detail = RepairDetail(
+                            partName: partNameController.text.trim(),
+                            partNumber: partNumberController.text.trim().isNotEmpty 
+                              ? partNumberController.text.trim() 
+                              : null,
+                            quantity: quantity,
+                          );
+                          
+                          setDialogState(() {
+                            repairDetails.add(detail);
+                          });
+                          
+                          // Очищаем поля
+                          partNameController.clear();
+                          partNumberController.clear();
+                          quantityController.clear();
+                          
+                          _showSuccess('Деталь добавлена');
+                        },
+                        icon: const Icon(Icons.add),
+                        label: const Text('Добавить деталь'),
+                      ),
+                      
+                      const SizedBox(height: 16),
+                      
+                      // Список добавленных деталей
+                      if (repairDetails.isNotEmpty)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Добавленные детали:',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              height: 150,
+                              child: ListView.builder(
+                                itemCount: repairDetails.length,
+                                itemBuilder: (context, index) {
+                                  final detail = repairDetails[index];
+                                  return Card(
+                                    margin: const EdgeInsets.only(bottom: 4),
+                                    child: ListTile(
+                                      title: Text(detail.partName),
+                                      subtitle: detail.partNumber != null 
+                                        ? Text('Артикул: ${detail.partNumber}')
+                                        : null,
+                                      trailing: Text('${detail.quantity} шт.'),
+                                      leading: IconButton(
+                                        icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                                        onPressed: () {
+                                          setDialogState(() {
+                                            repairDetails.removeAt(index);
+                                          });
+                                        },
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
                     ],
                   ),
                 ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text('Отмена'),
-                  ),
-                  ElevatedButton(
-                    onPressed: selectedMechanic == null
-                        ? null
-                        : () => Navigator.of(context).pop(true),
-                    child: const Text('Перенаправить'),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      );
-
-      if (result == true && selectedMechanic != null) {
-        await _performRequestRedirect(request, selectedMechanic!);
-      }
-    } catch (e) {
-      _showError('Ошибка перенаправления заявки: $e');
-    }
-  }*/
-
-  // Выполнение перенаправления заявки
-  /*Future<void> _performRequestRedirect(Request request, Mechanic newMechanic) async {
-    try {
-      // Получаем текущих механиков заявки
-      List<int> currentMechanicIds = [];
-      
-      try {
-        final response = await http.get(
-          Uri.parse('$baseUrl/requests/${request.id}/mechanics'),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Отмена'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (repairDetails.isEmpty) {
+                      final bool? confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Подтверждение'),
+                          content: const Text('Вы не добавили детали ремонта. Завершить работу без деталей?'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(false),
+                              child: const Text('Отмена'),
+                            ),
+                            ElevatedButton(
+                              onPressed: () => Navigator.of(context).pop(true),
+                              child: const Text('Завершить'),
+                            ),
+                          ],
+                        ),
+                      );
+                      
+                      if (confirm == true) {
+                        Navigator.of(context).pop(); // Закрыть диалог деталей
+                        await _completeRequestWithoutDetails(request);
+                      }
+                    } else {
+                      Navigator.of(context).pop(); // Закрыть диалог деталей
+                      await _completeRequest(request, repairDetails);
+                    }
+                  },
+                  child: const Text('Завершить работу'),
+                ),
+              ],
+            );
+          },
         );
-
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          final mechanicsData = data['mechanics'] as List?;
-          if (mechanicsData != null) {
-            currentMechanicIds = mechanicsData.map((m) => m['id'] as int).toList();
-          }
-        }
-      } catch (e) {
-        print('Ошибка при получении текущих механиков: $e');
-        // Если не можем получить текущих механиков, используем только нового
-        currentMechanicIds = [newMechanic.id];
-      }
-
-      // Удаляем текущего механика из списка (если он там есть)
-      currentMechanicIds.remove(userId);
-      
-      // Добавляем нового механика (если его еще нет)
-      if (!currentMechanicIds.contains(newMechanic.id)) {
-        currentMechanicIds.add(newMechanic.id);
-      }
-
-      // Обновляем список механиков на заявке
-      final updateResponse = await http.post(
-        Uri.parse('$baseUrl/requests/${request.id}/assign-mechanics'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'mechanicIds': currentMechanicIds,
-        }),
-      );
-
-      if (updateResponse.statusCode == 200) {
-        // Удаляем себя из заявки
-        await _removeMyselfFromRequest(request);
-        
-        await _loadMechanicRequests();
-        _showSuccess('Заявка перенаправлена механику ${newMechanic.name}');
-
-        // Закрываем экран деталей
-        if (Navigator.of(context).canPop()) {
-          Navigator.of(context).pop();
-        }
-      } else {
-        _showError('Ошибка перенаправления заявки: ${updateResponse.statusCode}');
-      }
-    } catch (e) {
-      _showError('Ошибка перенаправления заявки: $e');
-    }
-  }*/
-
-  // Метод для удаления себя из заявки
-  Future<void> _removeMyselfFromRequest(Request request) async {
-    try {
-      // Пробуем удалить себя через эндпоинт удаления механика
-      final response = await http.delete(
-        Uri.parse('$baseUrl/requests/${request.id}/mechanics/$userId'),
-        headers: {'Content-Type': 'application/json'},
-      );
-
-      if (response.statusCode != 200) {
-        print('Не удалось удалить себя из заявки через API, обновляем локально');
-      }
-    } catch (e) {
-      print('Ошибка при удалении себя из заявки: $e');
-    }
+      },
+    );
   }
 
-  // МЕТОД ДЛЯ ВРЕМЕННОГО ОТКЛОНЕНИЯ ЗАЯВКИ
+  // Метод для временного отклонения заявки
   Future<void> _temporarilyRejectRequest(Request request) async {
     final TextEditingController rejectionController = TextEditingController();
 
@@ -875,7 +1006,7 @@ class _MechanicMenuState extends State<MechanicMenu> {
     }
   }
 
-  // Fallback метод
+  // Fallback метод для временного отклонения
   Future<void> _temporarilyRejectFallback(Request request, String reason) async {
     try {
       final response = await http.put(
@@ -929,6 +1060,18 @@ class _MechanicMenuState extends State<MechanicMenu> {
     return 'новая';
   }
 
+  // Получение форматированного описания проблемы для карточки
+  String _getFormattedProblemPreview(String description) {
+    String cleanedDescription = description.replaceAll(RegExp(r'!+$'), '');
+    List<String> problems = cleanedDescription.split('!').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+    
+    if (problems.isNotEmpty) {
+      return '1. ${problems[0]}';
+    }
+    
+    return 'Проблема не указана';
+  }
+
   List<Request> _getFilteredAndSortedRequests() {
     List<Request> filtered = List.from(requests);
 
@@ -976,8 +1119,6 @@ class _MechanicMenuState extends State<MechanicMenu> {
 
     final status = _getRequestStatus(request);
     final statusColor = _getStatusColor(status);
-
-    // Проверяем, завершил ли механик эту заявку
     final isCompletedByMe = _requestCompletionStatus[request.id] == "completed";
 
     return Card(
@@ -991,118 +1132,88 @@ class _MechanicMenuState extends State<MechanicMenu> {
         borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.all(16),
-          child: Row(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Фото транспорта
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey.shade300),
-                ),
-                child: _buildTransportImage(transport.photo),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Название транспорта
-                    Text(
-                      transport.model,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade300),
                     ),
-                    const SizedBox(height: 8),
-                    // Описание проблемы (первая строка)
-                    Text(
-                      request.problem.split('\n').first,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Colors.black87,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 8),
-                    // Индикатор завершения работы
-                    /*if (isCompletedByMe)
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        margin: const EdgeInsets.only(bottom: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.green[50],
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.green),
-                        ),
-                        /*child: Row(
-                          children: [
-                            Icon(Icons.check_circle, color: Colors.green),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'Вы завершили работу над этой заявкой',
-                                style: TextStyle(
-                                  color: Colors.green[800],
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),*/
-                      ),*/
-                    if (status != 'закрыта' && status != 'временно отклонена' && !isCompletedByMe)
-                      Column(
-                        children: [
-                          /*Row(
-                            children: [
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: () => _completeRequest(request),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green,
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                  ),
-                                  child: const Text(
-                                    'Завершить мою работу',
-                                    style: TextStyle(fontSize: 16),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),*/
-                          const SizedBox(height: 8),
-                        ],
-                      ),
-                    // Статус заявки
-                    Row(
+                    child: _buildTransportImage(transport.photo),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: statusColor.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: statusColor),
+                        Text(
+                          transport.model,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.green,
                           ),
-                          child: Text(
-                            status.toUpperCase(),
-                            style: TextStyle(
-                              color: statusColor,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
+                        const SizedBox(height: 8),
+                        // Используем тот же метод форматирования, что и у менеджера и заявителя
+                        Text(
+                          (request.problemDescription?.isNotEmpty ?? false) 
+                            ? _getFormattedProblemPreview(request.problemDescription!)
+                            : _getFormattedProblemPreview(request.problem),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Colors.black87,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 8),
                       ],
                     ),
-                  ],
+                  ),
+                ],
+              ),
+              
+              // Кнопка для завершения работы с деталями
+              if (status != 'закрыта' && status != 'временно отклонена' && !isCompletedByMe)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: ElevatedButton.icon(
+                    onPressed: () => _showCompleteWithDetailsDialog(request),
+                    icon: const Icon(Icons.build),
+                    label: const Text('Завершить работу с деталями'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      minimumSize: const Size(double.infinity, 48),
+                    ),
+                  ),
+                ),
+              
+              const SizedBox(height: 8),
+              
+              // Статус заявки
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: statusColor),
+                ),
+                child: Text(
+                  status.toUpperCase(),
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
@@ -1600,9 +1711,9 @@ class RequestDetailsScreen extends StatelessWidget {
   final VoidCallback onCompleteRequest;
   final VoidCallback onUpdateStatus;
   final VoidCallback onTemporaryReject;
-  //final VoidCallback onRedirectRequest;
   final bool isMechanic;
   final bool isCompletedByMe;
+  final List<RepairDetail> repairDetails;
 
   const RequestDetailsScreen({
     super.key,
@@ -1613,10 +1724,158 @@ class RequestDetailsScreen extends StatelessWidget {
     required this.onCompleteRequest,
     required this.onUpdateStatus,
     required this.onTemporaryReject,
-    //required this.onRedirectRequest,
     required this.isMechanic,
     required this.isCompletedByMe,
+    required this.repairDetails,
   });
+
+  // Форматирование описания проблемы
+  List<Widget> _formatProblemDescription(String description) {
+    String cleanedDescription = description.replaceAll(RegExp(r'!+$'), '');
+    List<String> problems = cleanedDescription.split('!')
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty)
+        .toList();
+    
+    return problems.asMap().entries.map((entry) {
+      final index = entry.key;
+      final problem = entry.value;
+      
+      return Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.green[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.green[200]!),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.green,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${index + 1}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                problem,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  // Построение списка проблем
+  Widget _buildProblemsList() {
+    final problemText = (request.problemDescription?.isNotEmpty ?? false) 
+        ? request.problemDescription! 
+        : request.problem;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Перечень проблем:',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.green,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ..._formatProblemDescription(problemText),
+      ],
+    );
+  }
+
+  // Построение секции с деталями ремонта
+  Widget _buildRepairDetailsSection() {
+    if (repairDetails.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 24),
+        const Text(
+          'Использованные детали',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.blue,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...repairDetails.map((detail) {
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue[200]!),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        detail.partName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${detail.quantity} шт.',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                      ),
+                    ),
+                  ],
+                ),
+                if (detail.partNumber != null && detail.partNumber!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Артикул: ${detail.partNumber}',
+                      style: const TextStyle(
+                        color: Colors.grey,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }).toList(),
+      ],
+    );
+  }
 
   String _getRequestStatus(Request request) {
     if (request.status == 'временно отклонена') {
@@ -1789,35 +2048,13 @@ class RequestDetailsScreen extends StatelessWidget {
 
             const SizedBox(height: 24),
 
-            // Перечень проблем - нумерованный список
-            const Text(
-              'Перечень проблем',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.green,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey[300]!),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ...request.problem.split('\n').where((line) => line.trim().isNotEmpty).toList().asMap().entries.map(
-                    (entry) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Text('${entry.key + 1}.${entry.value.trim()}'),
-                    ),
-                  ).toList(),
-                ],
-              ),
-            ),
+            // Перечень проблем
+            _buildProblemsList(),
+
+            const SizedBox(height: 24),
+
+            // Детали ремонта (показываем только если есть детали)
+            _buildRepairDetailsSection(),
 
             const SizedBox(height: 24),
 
@@ -2035,27 +2272,6 @@ class RequestDetailsScreen extends StatelessWidget {
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            /*Expanded(
-                              child: ElevatedButton(
-                                onPressed: onRedirectRequest,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blue,
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                ),
-                                child: const Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.forward, color: Colors.white),
-                                    SizedBox(width: 8),
-                                    Text(
-                                      'Перенаправить',
-                                      style: TextStyle(fontSize: 16, color: Colors.white),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),*/
-                            const SizedBox(width: 12),
                             Expanded(
                               child: ElevatedButton(
                                 onPressed: onCompleteRequest,
@@ -2089,27 +2305,6 @@ class RequestDetailsScreen extends StatelessWidget {
                             ),
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        /*Center(
-                          child: ElevatedButton(
-                            onPressed: onRedirectRequest,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue,
-                              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.forward, color: Colors.white),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Перенаправить',
-                                  style: TextStyle(fontSize: 16, color: Colors.white),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),*/
                       ],
                     ),
                   const SizedBox(height: 16),
@@ -2137,6 +2332,8 @@ class Request {
   final Map<String, dynamic>? applicant;
   final Map<String, dynamic>? transport;
   final Map<String, dynamic>? mechanic;
+  final String? problemDescription;
+  final List<RepairDetail>? repairDetails;
 
   Request({
     required this.id,
@@ -2152,6 +2349,8 @@ class Request {
     this.applicant,
     this.transport,
     this.mechanic,
+    this.problemDescription,
+    this.repairDetails,
   });
 
   factory Request.fromJson(Map<String, dynamic> json) {
@@ -2169,6 +2368,39 @@ class Request {
       applicant: json['applicant'] is Map ? Map<String, dynamic>.from(json['applicant']) : null,
       transport: json['transport'] is Map ? Map<String, dynamic>.from(json['transport']) : null,
       mechanic: json['mechanic'] is Map ? Map<String, dynamic>.from(json['mechanic']) : null,
+      problemDescription: json['problemDescription'],
+      repairDetails: json['repairDetails'] != null
+          ? List<RepairDetail>.from(json['repairDetails'].map((x) => RepairDetail.fromJson(x)))
+          : null,
+    );
+  }
+}
+
+// Класс для деталей ремонта
+class RepairDetail {
+  final String partName;
+  final String? partNumber;
+  final double quantity;
+  
+  RepairDetail({
+    required this.partName,
+    this.partNumber,
+    required this.quantity,
+  });
+  
+  Map<String, dynamic> toJson() {
+    return {
+      'partName': partName,
+      'partNumber': partNumber,
+      'quantity': quantity,
+    };
+  }
+  
+  factory RepairDetail.fromJson(Map<String, dynamic> json) {
+    return RepairDetail(
+      partName: json['partName'] ?? '',
+      partNumber: json['partNumber'],
+      quantity: (json['quantity'] as num).toDouble(),
     );
   }
 }

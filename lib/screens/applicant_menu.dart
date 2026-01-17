@@ -8,10 +8,12 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:open_filex/open_filex.dart';  // Добавьте этот импорт
+import 'package:open_filex/open_filex.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../global_config.dart';
 
-const String baseUrl = 'https://jvvrlmfl-3000.euw.devtunnels.ms'; 
+final String baseUrl = GlobalConfig.baseUrl;
+
 
 class ApplicantMenu extends StatefulWidget {
   const ApplicantMenu({super.key});
@@ -28,11 +30,16 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
   List<Request> requests = [];
   List<Transport> transports = [];
   List<Service> services = [];
+  List<Problem> problems = [];
+  List<Problem> selectedProblems = [];
+  final TextEditingController _customProblemController = TextEditingController();
+  bool _showCustomField = false;
+  bool _isLoading = true;
+
   bool _isAccountPanelOpen = false;
   String _sortOrder = 'newest';
   String? _statusFilter;
   String? _transportFilter;
-  bool _isLoading = true;
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -43,13 +50,9 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
   final TextEditingController _modelController = TextEditingController();
   int? _selectedServiceId;
   
-  final List<String> _selectedPhotosBase64 = []; // Множественные фото
+  final List<String> _selectedPhotosBase64 = [];
   String? _selectedProfilePhotoBase64;
   final ImagePicker _imagePicker = ImagePicker();
-
-  // Список проблем
-  final List<String> _problemList = [];
-  final TextEditingController _problemController = TextEditingController();
 
   final List<String> _transportTypes = [
     'троллейбусы',
@@ -58,8 +61,7 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     'электрогрузовики'
   ];
 
-  // НОВАЯ ПЕРЕМЕННАЯ: Механики по заявкам
-  final Map<int, List<Mechanic>> _requestMechanics = {}; // requestId -> list of mechanics
+  final Map<int, List<Mechanic>> _requestMechanics = {};
 
   @override
   void initState() {
@@ -67,7 +69,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     _loadUserData();
   }
 
-  // Метод для загрузки данных пользователя с сервера
   Future<void> _loadUserDataFromServer() async {
     try {
       print('Loading user data from server for user ID: $userId');
@@ -105,43 +106,56 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
   }
 
   Future<void> _loadUserData() async {
-  final prefs = await SharedPreferences.getInstance();
-  setState(() {
-    userId = prefs.getInt('user_id');
-    userName = prefs.getString('user_name') ?? 'Пользователь';
-    userEmail = prefs.getString('user_email') ?? 'Email не указан';
-    userPhoto = prefs.getString('user_photo');
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      userId = prefs.getInt('user_id');
+      userName = prefs.getString('user_name') ?? 'Пользователь';
+      userEmail = prefs.getString('user_email') ?? 'Email не указан';
+      userPhoto = prefs.getString('user_photo');
+      
+      _nameController.text = userName!;
+      _emailController.text = userEmail!;
+    });
     
-    _nameController.text = userName!;
-    _emailController.text = userEmail!;
-  });
-  
-  print('👤 Пользователь из SharedPreferences: ID=$userId, Name=$userName');
-  
-  // Проверяем, что userId не null
-  if (userId != null && userId! > 0) {
-    // Загружаем данные с сервера
-    await _loadUserDataFromServer();
+    print('👤 Пользователь из SharedPreferences: ID=$userId, Name=$userName');
     
-    // Загружаем все данные параллельно
-    await Future.wait([
-      _loadUserRequests(),   // ← ТЕПЕРЬ ПРАВИЛЬНЫЙ МЕТОД
-      _loadTransports(),
-      _loadServices(),
-    ]);
+    if (userId != null && userId! > 0) {
+      await _loadUserDataFromServer();
+      
+      await Future.wait([
+        _loadUserRequests(),
+        _loadTransports(),
+        _loadServices(),
+        _loadProblems(),
+      ]);
+      
+      for (var request in requests) {
+        await _loadMechanicsForRequest(request.id);
+      }
+    }
     
-    // Загружаем механиков для каждой заявки
-    for (var request in requests) {
-      await _loadMechanicsForRequest(request.id);
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _loadProblems() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/problems'));
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        setState(() {
+          problems = data.map((item) => Problem.fromJson(item)).toList();
+        });
+        print('Загружено проблем: ${problems.length}');
+      } else {
+        print('Ошибка загрузки проблем: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error loading problems: $e');
     }
   }
-  
-  setState(() {
-    _isLoading = false;
-  });
-}
 
-  // НОВЫЙ МЕТОД: Загрузка механиков для заявки
   Future<void> _loadMechanicsForRequest(int requestId) async {
     try {
       final response = await http.get(
@@ -167,7 +181,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
   try {
     print('📋 Загрузка заявок для заявителя ID: $userId');
     
-    // Используем правильный эндпоинт для заявок заявителя
     final response = await http.get(
       Uri.parse('$baseUrl/requests/applicant/$userId'),
       headers: {
@@ -177,10 +190,8 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     );
     
     print('Статус ответа: ${response.statusCode}');
-    print('Тело ответа (первые 500 символов): ${response.body.length > 500 ? response.body.substring(0, 500) + '...' : response.body}');
     
     if (response.statusCode == 200) {
-      // Проверяем, не пустой ли ответ
       if (response.body.trim().isEmpty || response.body.trim() == 'null') {
         print('⚠️ Сервер вернул пустой ответ');
         setState(() {
@@ -196,7 +207,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
         List<Request> loadedRequests = [];
         
         if (decoded is List) {
-          // Ответ - массив
           print('✅ Ответ является списком, элементов: ${decoded.length}');
           
           for (var item in decoded) {
@@ -207,7 +217,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
             }
           }
         } else {
-          // Ответ не массив
           print('⚠️ Ответ не является списком: $decoded');
           loadedRequests = [];
         }
@@ -275,7 +284,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     }
   }
 
-  // Метод для построения аватарки с обработкой ошибок
   Widget _buildAvatar(String? photoBase64, double radius) {
     if (photoBase64 != null && photoBase64.isNotEmpty) {
       try {
@@ -302,7 +310,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     );
   }
 
-  // Обновленный метод для выбора множественных фото
   Future<void> _pickMultipleImages() async {
     try {
       print('Начало выбора множественных фото...');
@@ -318,7 +325,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     }
   }
 
-  // Метод для выбора множественных фото на веб-платформе
   Future<void> _pickMultipleImagesWeb() async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -345,7 +351,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     }
   }
 
-  // Метод для выбора множественных фото на мобильных платформах
   Future<void> _pickMultipleImagesMobile() async {
     try {
       final List<XFile> images = await _imagePicker.pickMultiImage(
@@ -375,7 +380,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     }
   }
 
-  // Обновленный метод для выбора фото профиля
   Future<void> _pickProfileImage() async {
     try {
       print('Начало выбора фото профиля...');
@@ -391,7 +395,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     }
   }
 
-  // Вспомогательные методы для выбора одиночного фото
   Future<void> _pickImageWeb(String type) async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -446,12 +449,11 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     }
   }
 
-  // Обновленный метод для создания заявки (полноэкранный диалог)
   void _createRequest() {
-    _problemList.clear();
+    selectedProblems.clear();
     _selectedPhotosBase64.clear();
     _selectedServiceId = null;
-    _problemController.clear();
+    _customProblemController.clear();
     _transportNameController.clear();
     _serialController.clear();
     _modelController.clear();
@@ -476,7 +478,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                 ),
                 child: Column(
                   children: [
-                    // Заголовок
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -512,7 +513,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Фото транспорта
                             const Text(
                               'Фото транспорта:',
                               style: TextStyle(
@@ -524,19 +524,9 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                             _buildPhotoGrid(setDialogState),
                             const SizedBox(height: 16),
                             
-                            // Список проблем
-                            const Text(
-                              'Описание проблем (список):',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            _buildProblemList(setDialogState),
+                            _buildProblemsList(setDialogState),
                             const SizedBox(height: 16),
                             
-                            // Выбор сервиса
                             const Text(
                               'Выберите сервис:',
                               style: TextStyle(
@@ -558,118 +548,116 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                                     child: Text('${service.address} (${service.workTime})'),
                                   );
                                 }).toList(),
-                              ],
-                              onChanged: (int? newValue) {
-                                setDialogState(() {
-                                  _selectedServiceId = newValue;
-                                });
-                              },
-                              decoration: const InputDecoration(
-                                labelText: 'Сервисный центр *',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            
-                            // Данные транспорта
-                            const Text(
-                              'Данные транспорта:',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            TextField(
-                              controller: _transportNameController,
-                              decoration: const InputDecoration(
-                                labelText: 'Название транспорта *',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            DropdownButtonFormField<String>(
-                              value: _selectedTransportType,
-                              items: _transportTypes.map((String type) {
-                                return DropdownMenuItem(
-                                  value: type,
-                                  child: Text(type),
-                                );
-                              }).toList(),
-                              onChanged: (String? newValue) {
-                                setDialogState(() {
-                                  _selectedTransportType = newValue!;
-                                });
-                              },
-                              decoration: const InputDecoration(
-                                labelText: 'Тип транспорта *',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            TextField(
-                              controller: _serialController,
-                              decoration: const InputDecoration(
-                                labelText: 'Серийный номер *',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            TextField(
-                              controller: _modelController,
-                              decoration: const InputDecoration(
-                                labelText: 'Модель *',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            const Text(
-                              '* - обязательные поля',
-                              style: TextStyle(color: Colors.grey, fontSize: 12),
-                            ),
-                            const SizedBox(height: 20),
-                          ],
-                        ),
-                      ),
-                    ),
-                    // Кнопки действий
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        border: Border(top: BorderSide(color: Colors.grey[300]!)),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () {
-                                _clearRequestForm();
-                                Navigator.of(context).pop();
-                              },
-                              child: const Text('Отмена'),
+                            ],
+                            onChanged: (int? newValue) {
+                              setDialogState(() {
+                                _selectedServiceId = newValue;
+                              });
+                            },
+                            decoration: const InputDecoration(
+                              labelText: 'Сервисный центр *',
+                              border: OutlineInputBorder(),
                             ),
                           ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: () {
-                                if (_validateRequestForm()) {
-                                  _addNewRequest();
-                                  Navigator.of(context).pop();
-                                }
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue,
-                              ),
-                              child: const Text('Создать заявку'),
+                          const SizedBox(height: 16),
+                          
+                          const Text(
+                            'Данные транспорта:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
                             ),
                           ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _transportNameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Название транспорта *',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<String>(
+                            value: _selectedTransportType,
+                            items: _transportTypes.map((String type) {
+                              return DropdownMenuItem(
+                                value: type,
+                                child: Text(type),
+                              );
+                            }).toList(),
+                            onChanged: (String? newValue) {
+                              setDialogState(() {
+                                _selectedTransportType = newValue!;
+                              });
+                            },
+                            decoration: const InputDecoration(
+                              labelText: 'Тип транспорта *',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _serialController,
+                            decoration: const InputDecoration(
+                              labelText: 'Серийный номер *',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _modelController,
+                            decoration: const InputDecoration(
+                              labelText: 'Модель *',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          const Text(
+                            '* - обязательные поля',
+                            style: TextStyle(color: Colors.grey, fontSize: 12),
+                          ),
+                          const SizedBox(height: 20),
                         ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[50],
+                      border: const Border(top: BorderSide(color: Colors.grey)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {
+                              _clearRequestForm();
+                              Navigator.of(context).pop();
+                            },
+                            child: const Text('Отмена'),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              if (_validateRequestForm()) {
+                                _addNewRequest();
+                                Navigator.of(context).pop();
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue,
+                            ),
+                            child: const Text('Создать заявку'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              )
               );
             },
           ),
@@ -678,7 +666,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     );
   }
 
-  // Виджет для отображения сетки фото
   Widget _buildPhotoGrid(void Function(void Function()) setDialogState) {
     return GridView.builder(
       shrinkWrap: true,
@@ -752,76 +739,116 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     );
   }
 
-  // Виджет для списка проблем
-  Widget _buildProblemList(void Function(void Function()) setDialogState) {
+  Widget _buildProblemsList(void Function(void Function()) setDialogState) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Список добавленных проблем
-        if (_problemList.isNotEmpty)
-          ..._problemList.asMap().entries.map((entry) {
-            final index = entry.key;
-            final problem = entry.value;
+        const Text(
+          'Выберите проблемы (можно несколько):',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        
+        Column(
+          children: [
+            ...problems.where((p) => p.isOther == false).map((problem) {
+              final isSelected = selectedProblems.any((p) => p.id == problem.id);
+              
+              return Card(
+                margin: const EdgeInsets.only(bottom: 8),
+                child: CheckboxListTile(
+                  title: Text(problem.name),
+                  subtitle: problem.description != null ? Text(problem.description!) : null,
+                  value: isSelected,
+                  onChanged: (bool? value) {
+                    setDialogState(() {
+                      if (value == true) {
+                        selectedProblems.add(problem);
+                      } else {
+                        selectedProblems.removeWhere((p) => p.id == problem.id);
+                      }
+                    });
+                  },
+                ),
+              );
+            }).toList(),
             
-            return Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text('${index + 1}. $problem'),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () {
+            if (problems.any((p) => p.isOther == true))
+              ...problems.where((p) => p.isOther == true).map((otherOption) {
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: CheckboxListTile(
+                    title: Text(otherOption.name),
+                    subtitle: otherOption.description != null ? Text(otherOption.description!) : null,
+                    value: _showCustomField,
+                    onChanged: (bool? value) {
                       setDialogState(() {
-                        _problemList.removeAt(index);
+                        _showCustomField = value ?? false;
+                        if (_showCustomField) {
+                          selectedProblems.add(otherOption);
+                        } else {
+                          selectedProblems.removeWhere((p) => p.isOther == true);
+                          _customProblemController.clear();
+                        }
                       });
                     },
-                    iconSize: 20,
                   ),
-                ],
-              ),
-            );
-          }),
-        
-        // Поле для добавления новой проблемы
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _problemController,
-                decoration: const InputDecoration(
-                  hintText: 'Введите проблему...',
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              icon: const Icon(Icons.add, color: Colors.blue),
-              onPressed: () {
-                if (_problemController.text.trim().isNotEmpty) {
-                  setDialogState(() {
-                    _problemList.add(_problemController.text.trim());
-                    _problemController.clear();
-                  });
-                }
-              },
-            ),
+                );
+              }).toList(),
           ],
         ),
+        
+        if (_showCustomField)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 16),
+              const Text(
+                'Опишите свою проблему:',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _customProblemController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText: 'Подробно опишите проблему...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        
+        if (selectedProblems.isNotEmpty)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 20),
+              const Text(
+                'Вы выбрали:',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              ...selectedProblems.map((problem) {
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 4),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text('• ${problem.name}'),
+                );
+              }).toList(),
+            ],
+          ),
       ],
     );
   }
 
   bool _validateRequestForm() {
-    if (_problemList.isEmpty) {
-      _showError('Добавьте хотя бы одну проблему');
+    if (selectedProblems.isEmpty && _customProblemController.text.isEmpty) {
+      _showError('Выберите хотя бы одну проблему или опишите свою');
       return false;
     }
     if (_selectedServiceId == null) {
@@ -852,49 +879,106 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     );
   }
 
-  // Обновленный метод для создания заявки с множественными фото
   Future<void> _addNewRequest() async {
-    try {
-      print('Starting to create new request with ${_selectedPhotosBase64.length} photos...');
-      print('Selected service ID: $_selectedServiceId');
+  try {
+    print('Starting to create new request with ${_selectedPhotosBase64.length} photos...');
+    print('Selected service ID: $_selectedServiceId');
 
-      // Преобразуем список проблем в одну строку
-      final problemsText = _problemList.join('\n ');
+    if (_selectedServiceId == null) {
+      _showError('Выберите сервисный центр');
+      return;
+    }
+    if (_transportNameController.text.trim().isEmpty) {
+      _showError('Введите название транспорта');
+      return;
+    }
+    if (_serialController.text.trim().isEmpty) {
+      _showError('Введите серийный номер');
+      return;
+    }
+    if (_modelController.text.trim().isEmpty) {
+      _showError('Введите модель транспорта');
+      return;
+    }
+    
+    if (selectedProblems.isEmpty && _customProblemController.text.isEmpty) {
+      _showError('Выберите хотя бы одну проблему или опишите свою');
+      return;
+    }
 
-      // Для множественных фото будем сохранять их в формате JSON массива
-      final photosJson = json.encode(_selectedPhotosBase64);
+    final List<int> problemIds = selectedProblems
+        .where((p) => p.isOther == false)
+        .map((p) => p.id)
+        .toList();
+    
+    final customProblem = _showCustomField && _customProblemController.text.isNotEmpty 
+        ? _customProblemController.text.trim() 
+        : null;
+    
+    String problemDescription = '';
+    
+    if (problemIds.isNotEmpty) {
+      final selectedProblemsFromList = problems.where((p) => problemIds.contains(p.id)).toList();
+      if (selectedProblemsFromList.isNotEmpty) {
+        problemDescription = selectedProblemsFromList.map((p) => p.name).join('! ');
+      }
+    }
+    
+    if (customProblem != null && customProblem.isNotEmpty) {
+      if (problemDescription.isNotEmpty) {
+        problemDescription += '! ' + customProblem;
+      } else {
+        problemDescription = customProblem;
+      }
+    }
+    
+    if (problemDescription.isNotEmpty && !problemDescription.endsWith('!')) {
+      problemDescription += '!';
+    }
 
-      final transportResponse = await http.post(
-        Uri.parse('$baseUrl/transports'),
+    final photosJson = json.encode(_selectedPhotosBase64);
+
+    print('Creating transport...');
+    final transportResponse = await http.post(
+      Uri.parse('$baseUrl/transports'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'type': _selectedTransportType,
+        'serial': _serialController.text.trim(),
+        'model': _modelController.text.trim(),
+        'photo': photosJson,
+      }),
+    );
+
+    if (transportResponse.statusCode == 200) {
+      final transportData = json.decode(transportResponse.body);
+      final transportId = transportData['id'];
+      print('✅ Transport created with ID: $transportId');
+
+      print('Creating request...');
+      final Map<String, dynamic> requestData = {
+        'problemIds': problemIds,
+        'customProblem': customProblem,
+        'problemDescription': problemDescription,
+        'transportId': transportId,
+        'applicantId': userId,
+        'serviceId': _selectedServiceId,
+        'status': 'новая',
+      };
+      
+      print('Sending request data: ${json.encode(requestData)}');
+      
+      final requestResponse = await http.post(
+        Uri.parse('$baseUrl/requests'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'type': _selectedTransportType,
-          'serial': _serialController.text.trim(),
-          'model': _modelController.text.trim(),
-          'photo': photosJson, // Сохраняем массив фото в формате JSON
-        }),
+        body: json.encode(requestData),
       );
 
-      if (transportResponse.statusCode == 200) {
-        final transportData = json.decode(transportResponse.body);
-        final transportId = transportData['id'];
-        print('Transport created with ID: $transportId');
-
-        final requestResponse = await http.post(
-          Uri.parse('$baseUrl/requests'),
-          headers: {'Content-Type': 'application/json'},
-          body: json.encode({
-            'problem': problemsText,
-            'transportId': transportId,
-            'applicantId': userId,
-            'mechanicId': null,
-            'serviceId': _selectedServiceId,
-            'closedAt': null,
-            'status': "новая"
-          }),
-        );
-
-        if (requestResponse.statusCode == 200) {
+      print('Request response status: ${requestResponse.statusCode}');
+      print('Request response body: ${requestResponse.body}');
+      
+      if (requestResponse.statusCode == 200) {
+        try {
           final requestData = json.decode(requestResponse.body);
           final newRequest = Request.fromJson(requestData);
           
@@ -906,24 +990,44 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
           _showSuccess('Заявка успешно создана!');
           
           await _loadUserRequests();
-        } else {
-          throw Exception('Failed to create request: ${requestResponse.statusCode}');
+        } catch (e) {
+          print('Error parsing response: $e');
+          _showError('Ошибка обработки ответа сервера');
+        }
+      } else if (requestResponse.statusCode == 400) {
+        try {
+          final errorData = json.decode(requestResponse.body);
+          _showError('Ошибка: ${errorData['error']}');
+        } catch (e) {
+          _showError('Ошибка валидации: ${requestResponse.body}');
+        }
+      } else if (requestResponse.statusCode == 404) {
+        try {
+          final errorData = json.decode(requestResponse.body);
+          _showError('Не найдено: ${errorData['error']}');
+        } catch (e) {
+          _showError('Ресурс не найден');
         }
       } else {
-        throw Exception('Failed to create transport: ${transportResponse.statusCode}');
+        print('Ошибка создания заявки: ${requestResponse.statusCode}');
+        print('Тело ответа: ${requestResponse.body}');
+        _showError('Ошибка создания заявки: ${requestResponse.statusCode}');
       }
-    } catch (e) {
-      print('Ошибка создания заявки: $e');
-      _showError('Ошибка при создании заявки: $e');
+    } else {
+      print('❌ Ошибка создания транспорта: ${transportResponse.statusCode}');
+      print('Тело ответа: ${transportResponse.body}');
+      _showError('Ошибка создания транспорта: ${transportResponse.statusCode}');
     }
+  } catch (e) {
+    print('❌ Критическая ошибка создания заявки: $e');
+    _showError('Ошибка при создании заявки: ${e.toString()}');
   }
+}
 
-  // Обновленный метод для генерации чека
   Future<void> _generateInvoice(Request request) async {
     try {
       debugPrint('📝 Генерация PDF чека для заявки: ${request.id}');
       
-      // Проверяем, закрыта ли заявка
       if (request.closedAt == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -935,7 +1039,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
         return;
       }
 
-      // Показываем индикатор загрузки
       showDialog(
         context: context,
         barrierDismissible: false,
@@ -945,16 +1048,13 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
       );
 
       try {
-        // Делаем запрос к серверу для генерации PDF чека
         final response = await http.get(
           Uri.parse('$baseUrl/api/requests/${request.id}/receipt'),
         );
 
-        // Закрываем индикатор
         if (mounted) Navigator.of(context).pop();
 
         if (response.statusCode == 200) {
-          // Сохраняем PDF в директорию документов
           final directory = await getApplicationDocumentsDirectory();
           final filePath = '${directory.path}/receipt-${request.id}-${DateTime.now().millisecondsSinceEpoch}.pdf';
 
@@ -963,15 +1063,12 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
 
           debugPrint('✅ PDF чек сохранен: $filePath');
 
-          // Открываем файл через OpenFilex - это вызовет системное окно выбора приложения
           final result = await OpenFilex.open(filePath);
 
-          // Отладочная информация
           debugPrint('Результат открытия файла: ${result.message}');
           debugPrint('Тип: ${result.type}');
 
           if (result.type != ResultType.done) {
-            // Если не удалось открыть, предлагаем альтернативный способ
             if (mounted) {
               await _showOpenFileOptions(context, filePath);
             }
@@ -1023,7 +1120,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
           }
         }
       } catch (e) {
-        // Закрываем индикатор в случае ошибки
         if (mounted) Navigator.of(context).pop();
         rethrow;
       }
@@ -1040,7 +1136,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     }
   }
 
-  // Метод для показа опций открытия файла
   Future<void> _showOpenFileOptions(BuildContext context, String filePath) async {
     return showDialog(
       context: context,
@@ -1051,7 +1146,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              // Попробуем открыть через url_launcher
               _launchUrl(filePath);
             },
             child: const Text('Открыть в браузере'),
@@ -1059,7 +1153,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
-              // Покажем путь к файлу для ручного открытия
               await _showFilePath(context, filePath);
             },
             child: const Text('Показать путь к файлу'),
@@ -1073,7 +1166,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     );
   }
 
-  // Метод для открытия через url_launcher
   Future<void> _launchUrl(String filePath) async {
     final uri = Uri.file(filePath);
     if (await canLaunchUrl(uri)) {
@@ -1083,7 +1175,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     }
   }
 
-  // Метод для показа пути к файлу
   Future<void> _showFilePath(BuildContext context, String filePath) async {
     return showDialog(
       context: context,
@@ -1119,9 +1210,7 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     );
   }
 
-  // Метод для показа деталей заявки
   void _showRequestDetails(Request request) {
-    // Получаем механиков для этой заявки
     final mechanics = _requestMechanics[request.id] ?? [];
     
     Navigator.of(context).push(
@@ -1148,14 +1237,15 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
   }
 
   void _clearRequestForm() {
-    _problemList.clear();
+    selectedProblems.clear();
     _selectedPhotosBase64.clear();
-    _problemController.clear();
+    _customProblemController.clear();
     _transportNameController.clear();
     _serialController.clear();
     _modelController.clear();
     _selectedTransportType = 'троллейбусы';
     _selectedServiceId = null;
+    _showCustomField = false;
   }
 
   Future<void> _updateProfile() async {
@@ -1234,7 +1324,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     }
   }
 
-  // МЕТОД ДЛЯ ОТОБРАЖЕНИЯ МНОЖЕСТВЕННЫХ ФОТО ТРАНСПОРТА
   Widget _buildTransportPhotos(String photosJson) {
     try {
       final List<dynamic> photosList = json.decode(photosJson);
@@ -1341,6 +1430,17 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
       default:
         return Colors.grey;
     }
+  }
+
+  String _getFormattedProblemPreview(String description) {
+    String cleanedDescription = description.replaceAll(RegExp(r'!+$'), '');
+    List<String> problems = cleanedDescription.split('!').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+    
+    if (problems.isNotEmpty) {
+      return '1. ${problems[0]}';
+    }
+    
+    return 'Проблема не указана';
   }
 
   List<Request> _getFilteredAndSortedRequests() {
@@ -1500,7 +1600,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     );
   }
 
-  // Обновленная карточка заявки с кнопкой генерации чека
   Widget _buildRequestCard(Request request) {
   final transport = transports.firstWhere(
     (t) => t.id == request.transportId,
@@ -1510,9 +1609,28 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
   final status = _getRequestStatus(request);
   final statusColor = _getStatusColor(request);
   
-  // Получаем механиков для этой заявки
   final mechanics = _requestMechanics[request.id] ?? [];
   final mechanicsCount = mechanics.length;
+
+  // Извлекаем первое фото, если оно есть
+  Uint8List? firstPhotoBytes;
+  if (transport.photo != null && transport.photo!.isNotEmpty) {
+    try {
+      if (transport.photo!.startsWith('[')) {
+        // Если фото в формате JSON массива
+        final List<dynamic> photosList = json.decode(transport.photo!);
+        if (photosList.isNotEmpty && photosList[0] is String) {
+          firstPhotoBytes = base64Decode(photosList[0] as String);
+        }
+      } else {
+        // Если фото в формате простой base64 строки
+        firstPhotoBytes = base64Decode(transport.photo!);
+      }
+    } catch (e) {
+      print('Error decoding transport photo: $e');
+      firstPhotoBytes = null;
+    }
+  }
 
   return Card(
     margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
@@ -1528,25 +1646,23 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Фото транспорта
             Container(
               width: 80,
               height: 80,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: Colors.grey.shade300),
+                color: Colors.grey.shade100,
               ),
-              child: transport.photo != null && transport.photo!.isNotEmpty
+              child: firstPhotoBytes != null
                   ? ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: Image.memory(
-                        base64Decode(transport.photo!.startsWith('[') 
-                          ? json.decode(transport.photo!)[0] 
-                          : transport.photo!),
+                        firstPhotoBytes!,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) {
                           return const Center(
-                            child: Icon(Icons.error, color: Colors.red),
+                            child: Icon(Icons.error, color: Colors.red, size: 24),
                           );
                         },
                       ),
@@ -1560,7 +1676,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Название транспорта
                   Text(
                     transport.model,
                     style: const TextStyle(
@@ -1572,9 +1687,10 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 8),
-                  // Описание проблемы (первая строка)
                   Text(
-                    request.problem.split('\n').first,
+                    (request.problemDescription?.isNotEmpty ?? false) 
+                      ? _getFormattedProblemPreview(request.problemDescription!)
+                      : request.problem.split('\n').first,
                     style: const TextStyle(
                       fontSize: 14,
                       color: Colors.black87,
@@ -1582,26 +1698,7 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  // Информация о механиках
-                  if (mechanicsCount > 0)
-                    /*Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        children: [
-                          Icon(Icons.engineering, size: 14, color: Colors.blue),
-                          const SizedBox(width: 4),
-                          Text(
-                            '$mechanicsCount механик${mechanicsCount == 1 ? '' : (mechanicsCount > 1 && mechanicsCount < 5 ? 'а' : 'ов')}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.blue[600],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),*/
                   const SizedBox(height: 8),
-                  // Статус заявки и кнопка чека
                   Row(
                     children: [
                       Container(
@@ -1647,10 +1744,9 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     return Stack(
       children: [
         Scaffold(
-          appBar: null, // Убираем AppBar
+          appBar: null,
           body: Column(
             children: [
-              // Кастомный заголовок вместо AppBar
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(16, 40, 16, 16),
@@ -1753,7 +1849,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
           ),
         ),
 
-        // Панель аккаунта
         if (_isAccountPanelOpen)
           Positioned(
             right: 0,
@@ -1772,7 +1867,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
               ),
               child: Column(
                 children: [
-                  // Кастомный заголовок для панели аккаунта
                   Container(
                     height: 80,
                     padding: const EdgeInsets.fromLTRB(16, 40, 16, 16),
@@ -1887,7 +1981,6 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
   }
 }
 
-// КЛАСС ДЛЯ ЭКРАНА ДЕТАЛЕЙ ЗАЯВКИ ВО ВЕСЬ ЭКРАН
 class RequestDetailsScreen extends StatelessWidget {
   final Request request;
   final List<Transport> transports;
@@ -1925,6 +2018,156 @@ class RequestDetailsScreen extends StatelessWidget {
       default:
         return Colors.grey;
     }
+  }
+
+  List<Widget> _formatProblemDescription(String description) {
+    String cleanedDescription = description.replaceAll(RegExp(r'!+$'), '');
+    
+    List<String> problems = cleanedDescription.split('!').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+    
+    return problems.asMap().entries.map((entry) {
+      final index = entry.key;
+      final problem = entry.value;
+      
+      return Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.blue[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.blue[200]!),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.blue,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${index + 1}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                problem,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  Widget _buildProblemsList() {
+    if (request.problems?.isNotEmpty ?? false) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Перечень проблем:',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.blue,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...request.problems!.asMap().entries.map((entry) {
+            final index = entry.key;
+            final problem = entry.value;
+            
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue[200]!),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.blue,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${index + 1}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          problem['name'] ?? 'Проблема',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        if (problem['description'] != null && problem['description']!.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              problem['description']!,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ],
+      );
+    }
+    
+    final problemText = (request.problemDescription?.isNotEmpty ?? false) 
+        ? request.problemDescription! 
+        : request.problem;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Перечень проблем:',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.blue,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ..._formatProblemDescription(problemText),
+      ],
+    );
   }
 
   Widget _buildDetailRow(String label, String value) {
@@ -1990,7 +2233,6 @@ class RequestDetailsScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Статус заявки
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -2027,7 +2269,6 @@ class RequestDetailsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             
-            // Основная информация
             const Text(
               'Основная информация',
               style: TextStyle(
@@ -2049,39 +2290,10 @@ class RequestDetailsScreen extends StatelessWidget {
             
             const SizedBox(height: 24),
             
-            // Перечень проблем - ИЗМЕНЕНО: цифры вместо точек
-            const Text(
-              'Перечень проблем',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.blue,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey[300]!),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ...request.problem.split('\n').where((line) => line.trim().isNotEmpty).toList().asMap().entries.map(
-                    (entry) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Text('${entry.key + 1}. ${entry.value.trim()}'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _buildProblemsList(),
             
             const SizedBox(height: 24),
             
-            // Причина временного отклонения (если заявка отклонена) - ДОБАВЛЕНО
             if (request.rejectionReason != null && request.rejectionReason!.isNotEmpty)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2130,37 +2342,6 @@ class RequestDetailsScreen extends StatelessWidget {
                 ],
               ),
             
-            // Секция механиков
-            /*if (mechanics.isNotEmpty)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Работающие механики',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ...mechanics.map((mechanic) {
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          child: Text(mechanic.name[0]),
-                        ),
-                        title: Text(mechanic.name),
-                        subtitle: Text(mechanic.email),
-                      ),
-                    );
-                  }),
-                ],
-              ),*/
-            
-            // Фото транспорта (если есть)
             if (transport.photo != null && transport.photo!.isNotEmpty)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2178,7 +2359,6 @@ class RequestDetailsScreen extends StatelessWidget {
                 ],
               ),
             
-            // Данные транспорта
             const Text(
               'Данные транспорта',
               style: TextStyle(
@@ -2194,7 +2374,6 @@ class RequestDetailsScreen extends StatelessWidget {
             
             const SizedBox(height: 32),
             
-            // Кнопка закрыть
             Center(
               child: ElevatedButton(
                 onPressed: () => Navigator.of(context).pop(),
@@ -2276,12 +2455,11 @@ class RequestDetailsScreen extends StatelessWidget {
   }
 }
 
-// Обновленная модель Transport для хранения множественных фото
 class Transport {
   final int id;
   final String type;
   final String serial;
-  final String? photo; // Теперь хранит JSON массив фото
+  final String? photo;
   final String model;
 
   Transport({
@@ -2303,10 +2481,43 @@ class Transport {
   }
 }
 
-// Остальные модели
+class Problem {
+  final int id;
+  final String name;
+  final String? description;
+  final bool isActive;
+  final bool isOther;
+  
+  Problem({
+    required this.id,
+    required this.name,
+    this.description,
+    required this.isActive,
+    required this.isOther,
+  });
+  
+  factory Problem.fromJson(Map<String, dynamic> json) {
+    return Problem(
+      id: json['id'] ?? 0,
+      name: json['name'] ?? 'Неизвестно',
+      description: json['description'],
+      isActive: json['isActive'] ?? true,
+      isOther: json['isOther'] ?? false,
+    );
+  }
+  
+  static Problem get empty => Problem(
+    id: 0,
+    name: '',
+    isActive: false,
+    isOther: false,
+  );
+}
+
 class Request {
   final int id;
   final String problem;
+  final String? problemDescription;
   final DateTime submittedAt;
   final DateTime? closedAt;
   final int transportId;
@@ -2314,11 +2525,13 @@ class Request {
   final int? mechanicId;
   final int? serviceId;
   final String? rejectionReason;
-  final String status; 
+  final String status;
+  final List<Map<String, dynamic>>? problems;
 
   Request({
     required this.id,
     required this.problem,
+    this.problemDescription,
     required this.submittedAt,
     this.closedAt,
     required this.transportId,
@@ -2327,6 +2540,7 @@ class Request {
     this.serviceId,
     this.rejectionReason,
     required this.status,
+    this.problems,
   });
 
   factory Request.fromJson(Map<String, dynamic> json) {
@@ -2346,6 +2560,7 @@ class Request {
     return Request(
       id: json['id'] ?? 0,
       problem: json['problem'] ?? 'Описание не указано',
+      problemDescription: json['problemDescription'],
       submittedAt: parseDate(json['submittedAt']),
       closedAt: json['closedAt'] != null ? parseDate(json['closedAt']) : null,
       transportId: json['transportId'] ?? 0,
@@ -2354,6 +2569,9 @@ class Request {
       serviceId: json['serviceId'],
       rejectionReason: json['rejectionReason'],
       status: json['status'] ?? 'новая',
+      problems: json['problems'] != null 
+        ? List<Map<String, dynamic>>.from(json['problems'])
+        : null,
     );
   }
 }

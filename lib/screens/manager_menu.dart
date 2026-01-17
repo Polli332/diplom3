@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
+import 'package:intl/intl.dart';
+import '../global_config.dart';
 
-// Объявляем базовый URL в начале файла
-const String baseUrl = 'https://jvvrlmfl-3000.euw.devtunnels.ms'; // Замените на ваш публичный URL
+final String baseUrl = GlobalConfig.baseUrl;
+
 
 class ManagerMenu extends StatefulWidget {
   const ManagerMenu({super.key});
@@ -38,6 +40,9 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
 
   final Map<int, List<int>> _selectedMechanicsForRequest = {}; // requestId -> list of mechanicIds
   final Map<int, List<Mechanic>> _assignedMechanicsForRequest = {}; // requestId -> list of assigned mechanics
+  final Map<int, List<RepairDetail>> _repairDetailsByRequest = {}; // requestId -> list of repair details
+  final Map<int, String> _mechanicNames = {}; // mechanicId -> mechanic name
+  
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -53,6 +58,17 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
     'трамваи',
     'электрогрузовики'
   ];
+  
+  // Новые переменные для статусов механиков
+  final List<String> _mechanicStatuses = [
+    'свободен',
+    'занят',
+    'болеет',
+    'в отпуске'
+  ];
+  
+  // Мапа для хранения статусов механиков
+  final Map<int, Map<String, dynamic>> _mechanicStatusData = {};
 
   @override
   void initState() {
@@ -71,6 +87,150 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
     _mechanicEmailController.dispose();
     _mechanicPasswordController.dispose();
     super.dispose();
+  }
+
+  // НОВЫЙ МЕТОД: Загрузка деталей ремонта для заявки
+  Future<void> _loadRepairDetailsForRequest(int requestId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/requests/$requestId/repair-details'),
+      );
+      
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        final List<RepairDetail> details = data.map((item) => RepairDetail.fromJson(item)).toList();
+        
+        setState(() {
+          _repairDetailsByRequest[requestId] = details;
+        });
+      } else if (response.statusCode == 404) {
+        // Если деталей нет, создаем пустой список
+        setState(() {
+          _repairDetailsByRequest[requestId] = [];
+        });
+      }
+    } catch (e) {
+      debugPrint('Ошибка загрузки деталей ремонта для заявки $requestId: $e');
+      setState(() {
+        _repairDetailsByRequest[requestId] = [];
+      });
+    }
+  }
+
+  // НОВЫЙ МЕТОД: Загрузка деталей ремонта для всех заявок
+  Future<void> _loadRepairDetailsForAllRequests() async {
+    for (var request in requests) {
+      await _loadRepairDetailsForRequest(request.id);
+    }
+  }
+
+  // НОВЫЙ МЕТОД: Загрузка имен механиков для отображения в деталях ремонта
+  Future<void> _loadMechanicNames() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/mechanics'),
+      );
+      
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        
+        setState(() {
+          for (var mechanicData in data) {
+            final mechanicId = mechanicData['id'] as int;
+            final mechanicName = mechanicData['name'] as String;
+            _mechanicNames[mechanicId] = mechanicName;
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Ошибка загрузки имен механиков: $e');
+    }
+  }
+
+  // НОВЫЙ МЕТОД: Загрузка статусов механиков
+  Future<void> _loadMechanicsStatus() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/mechanics-with-status'),
+      );
+      
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        
+        setState(() {
+          for (final mechanicData in data) {
+            final mechanicId = mechanicData['id'] as int;
+            _mechanicStatusData[mechanicId] = {
+              'status': mechanicData['status'] ?? 'свободен',
+              'statusStartDate': mechanicData['statusStartDate'] != null 
+                ? DateTime.parse(mechanicData['statusStartDate'])
+                : null,
+              'statusEndDate': mechanicData['statusEndDate'] != null 
+                ? DateTime.parse(mechanicData['statusEndDate'])
+                : null,
+            };
+          }
+        });
+        
+        // Проверяем окончание сроков болезни/отпуска
+        _checkAndUpdateExpiredStatuses();
+      }
+    } catch (e) {
+      debugPrint('Ошибка загрузки статусов механиков: $e');
+    }
+  }
+
+  // НОВЫЙ МЕТОД: Проверка и обновление истекших статусов болезни/отпуска
+  void _checkAndUpdateExpiredStatuses() {
+    final now = DateTime.now();
+    
+    setState(() {
+      for (final entry in _mechanicStatusData.entries) {
+        final mechanicId = entry.key;
+        final statusData = entry.value;
+        final status = statusData['status'] as String?;
+        final endDate = statusData['statusEndDate'] as DateTime?;
+        
+        // Если статус "болеет" или "в отпуске" и срок истек
+        if ((status == 'болеет' || status == 'в отпуске') && 
+            endDate != null && 
+            now.isAfter(endDate)) {
+          
+          // Автоматически меняем статус на "свободен"
+          _mechanicStatusData[mechanicId] = {
+            'status': 'свободен',
+            'statusStartDate': null,
+            'statusEndDate': null,
+          };
+          
+          // Обновляем статус на сервере (в фоновом режиме)
+          _updateMechanicStatusToFree(mechanicId);
+        }
+      }
+    });
+  }
+
+  // НОВЫЙ МЕТОД: Обновление статуса механика на "свободен" на сервере
+  Future<void> _updateMechanicStatusToFree(int mechanicId) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/mechanics/$mechanicId/status'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'status': 'свободен',
+          'statusStartDate': null,
+          'statusEndDate': null,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        debugPrint('Статус механика $mechanicId автоматически изменен на "свободен"');
+      } else {
+        debugPrint('Ошибка автоматического обновления статуса механика $mechanicId: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('Ошибка автоматического обновления статуса механика $mechanicId: $e');
+    }
   }
 
   // НОВЫЙ МЕТОД: Загрузка назначенных механиков для заявки
@@ -96,8 +256,270 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
         });
       }
     } catch (e) {
-      print('Ошибка загрузки назначенных механиков: $e');
+      debugPrint('Ошибка загрузки назначенных механиков: $e');
     }
+  }
+
+  // НОВЫЙ МЕТОД: Диалог назначения статуса механику
+  void _showMechanicStatusDialog(Mechanic mechanic) {
+    final currentStatus = _mechanicStatusData[mechanic.id]?['status'] ?? 'свободен';
+    DateTime? startDate = _mechanicStatusData[mechanic.id]?['statusStartDate'];
+    DateTime? endDate = _mechanicStatusData[mechanic.id]?['statusEndDate'];
+    
+    String selectedStatus = currentStatus;
+    
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Статус механика'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // ФИО механика
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue[50],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          _buildAvatar(mechanic.photo, 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  mechanic.name,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                Text(
+                                  mechanic.email,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // Выбор статуса
+                    const Text(
+                      'Выберите статус:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    
+                    const SizedBox(height: 8),
+                    
+                    ..._mechanicStatuses.map((status) {
+                      return RadioListTile<String>(
+                        title: Text(status),
+                        value: status,
+                        groupValue: selectedStatus,
+                        onChanged: (String? value) {
+                          setDialogState(() {
+                            selectedStatus = value!;
+                          });
+                        },
+                      );
+                    }).toList(),
+                    
+                    // Календарь для статусов с датами
+                    if (selectedStatus == 'болеет' || selectedStatus == 'в отпуске')
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Период отсутствия:',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          
+                          const SizedBox(height: 8),
+                          
+                          // Дата начала
+                          ListTile(
+                            leading: const Icon(Icons.calendar_today),
+                            title: Text(
+                              startDate != null 
+                                ? _formatDate(startDate!)
+                                : 'Выберите дату начала',
+                            ),
+                            trailing: const Icon(Icons.arrow_drop_down),
+                            onTap: () async {
+                              final DateTime? picked = await showDatePicker(
+                                context: context,
+                                initialDate: startDate ?? DateTime.now(),
+                                firstDate: DateTime.now(),
+                                lastDate: DateTime(DateTime.now().year + 1),
+                              );
+                              if (picked != null) {
+                                setDialogState(() {
+                                  startDate = picked;
+                                });
+                              }
+                            },
+                          ),
+                          
+                          // Дата окончания
+                          ListTile(
+                            leading: const Icon(Icons.calendar_today),
+                            title: Text(
+                              endDate != null 
+                                ? _formatDate(endDate!)
+                                : 'Выберите дату окончания',
+                            ),
+                            trailing: const Icon(Icons.arrow_drop_down),
+                            onTap: () async {
+                              final DateTime? picked = await showDatePicker(
+                                context: context,
+                                initialDate: endDate ?? (startDate ?? DateTime.now()),
+                                firstDate: startDate ?? DateTime.now(),
+                                lastDate: DateTime(DateTime.now().year + 1),
+                              );
+                              if (picked != null) {
+                                setDialogState(() {
+                                  endDate = picked;
+                                });
+                              }
+                            },
+                          ),
+                          
+                          // Проверка корректности дат
+                          if (startDate != null && endDate != null && endDate!.isBefore(startDate!))
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 16),
+                              child: Text(
+                                'Дата окончания должна быть позже даты начала',
+                                style: TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Отмена'),
+                ),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (selectedStatus == 'болеет' || selectedStatus == 'в отпуске') {
+                      if (startDate == null || endDate == null) {
+                        _showError('Укажите даты начала и окончания');
+                        return;
+                      }
+                      if (endDate!.isBefore(startDate!)) {
+                        _showError('Дата окончания должна быть позже даты начала');
+                        return;
+                      }
+                    }
+                    
+                    await _updateMechanicStatus(mechanic, selectedStatus, startDate, endDate);
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Сохранить'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // НОВЫЙ МЕТОД: Обновление статуса механика
+  Future<void> _updateMechanicStatus(Mechanic mechanic, String status, DateTime? startDate, DateTime? endDate) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/mechanics/${mechanic.id}/status'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'status': status,
+          'statusStartDate': startDate?.toIso8601String(),
+          'statusEndDate': endDate?.toIso8601String(),
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _mechanicStatusData[mechanic.id] = {
+            'status': status,
+            'statusStartDate': startDate,
+            'statusEndDate': endDate,
+          };
+        });
+        
+        _showSuccess('Статус механика обновлен');
+        
+        // Обновляем список механиков
+        await _loadServiceMechanics();
+      } else {
+        _showError('Ошибка обновления статуса: ${response.statusCode}');
+      }
+    } catch (e) {
+      _showError('Ошибка обновления статуса: $e');
+    }
+  }
+
+  // НОВЫЙ МЕТОД: Получение цвета статуса механика
+  Color _getMechanicStatusColor(String status) {
+    switch (status) {
+      case 'свободен': return Colors.green;
+      case 'занят': return Colors.orange;
+      case 'болеет': return Colors.red;
+      case 'в отпуске': return Colors.blue;
+      default: return Colors.grey;
+    }
+  }
+
+  // НОВЫЙ МЕТОД: Получение иконки статуса механика
+  IconData _getMechanicStatusIcon(String status) {
+    switch (status) {
+      case 'свободен': return Icons.check_circle;
+      case 'занят': return Icons.work;
+      case 'болеет': return Icons.local_hospital;
+      case 'в отпуске': return Icons.beach_access;
+      default: return Icons.help;
+    }
+  }
+
+  // НОВЫЙ МЕТОД: Форматирование дат статуса
+  String _formatMechanicStatusDates(DateTime? startDate, DateTime? endDate) {
+    if (startDate == null || endDate == null) return '';
+    
+    final startStr = _formatDate(startDate);
+    final endStr = _formatDate(endDate);
+    
+    return '$startStr - $endStr';
+  }
+
+  // Метод для форматирования даты
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}';
+  }
+
+  String _formatDateTime(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }
 
   void _showAssignMechanicsDialog(Request request) async {
@@ -122,7 +544,7 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
                     const Text('Выберите механиков для этой заявки:'),
                     const SizedBox(height: 16),
                     
-                    // Список механиков с чекбоксами
+                    // Список механиков с чекбоксами и статусами
                     SizedBox(
                       height: 300,
                       child: ListView.builder(
@@ -130,20 +552,105 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
                         itemBuilder: (context, index) {
                           final mechanic = mechanics[index];
                           final isSelected = selectedMechanicIds.contains(mechanic.id);
+                          final status = _mechanicStatusData[mechanic.id]?['status'] ?? 'свободен';
+                          final statusColor = _getMechanicStatusColor(status);
+                          final statusIcon = _getMechanicStatusIcon(status);
                           
-                          return CheckboxListTile(
-                            title: Text(mechanic.name),
-                            subtitle: Text(mechanic.email),
-                            value: isSelected,
-                            onChanged: (bool? value) {
-                              setDialogState(() {
-                                if (value == true) {
-                                  selectedMechanicIds.add(mechanic.id);
-                                } else {
-                                  selectedMechanicIds.remove(mechanic.id);
-                                }
-                              });
-                            },
+                          // Проверяем доступность механика
+                          bool isAvailable = true;
+                          if (status == 'болеет' || status == 'в отпуске') {
+                            final startDate = _mechanicStatusData[mechanic.id]?['statusStartDate'];
+                            final endDate = _mechanicStatusData[mechanic.id]?['statusEndDate'];
+                            final now = DateTime.now();
+                            
+                            if (startDate != null && endDate != null) {
+                              isAvailable = now.isBefore(startDate) || now.isAfter(endDate);
+                            }
+                          } else if (status == 'занят') {
+                            isAvailable = false;
+                          }
+                          
+                          return Card(
+                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            child: CheckboxListTile(
+                              title: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    mechanic.name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  
+                                  // Статус механика
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        statusIcon,
+                                        size: 14,
+                                        color: statusColor,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        status,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: statusColor,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      
+                                      // Даты если есть
+                                      if ((status == 'болеет' || status == 'в отпуске') && 
+                                          _mechanicStatusData[mechanic.id]?['statusStartDate'] != null &&
+                                          _mechanicStatusData[mechanic.id]?['statusEndDate'] != null)
+                                        Expanded(
+                                          child: Padding(
+                                            padding: const EdgeInsets.only(left: 8),
+                                            child: Text(
+                                              _formatMechanicStatusDates(
+                                                _mechanicStatusData[mechanic.id]?['statusStartDate'],
+                                                _mechanicStatusData[mechanic.id]?['statusEndDate'],
+                                              ),
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: Colors.grey[600],
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  
+                                  // Предупреждение если механик недоступен
+                                  if (!isAvailable)
+                                    Text(
+                                      'Недоступен для назначения',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.red,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              subtitle: Text(mechanic.email),
+                              value: isSelected,
+                              onChanged: isAvailable 
+                                ? (bool? value) {
+                                    setDialogState(() {
+                                      if (value == true) {
+                                        selectedMechanicIds.add(mechanic.id);
+                                      } else {
+                                        selectedMechanicIds.remove(mechanic.id);
+                                      }
+                                    });
+                                  }
+                                : null, // Делаем недоступным если механик занят/болеет/в отпуске
+                            ),
                           );
                         },
                       ),
@@ -160,9 +667,32 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
                             style: TextStyle(fontWeight: FontWeight.bold),
                           ),
                           ..._assignedMechanicsForRequest[request.id]!.map((mechanic) {
+                            final status = _mechanicStatusData[mechanic.id]?['status'] ?? 'свободен';
+                            final statusColor = _getMechanicStatusColor(status);
+                            
                             return Padding(
                               padding: const EdgeInsets.symmetric(vertical: 4),
-                              child: Text('• ${mechanic.name}'),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    _getMechanicStatusIcon(status),
+                                    size: 16,
+                                    color: statusColor,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text('• ${mechanic.name}'),
+                                  ),
+                                  Text(
+                                    status,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: statusColor,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             );
                           }),
                         ],
@@ -201,8 +731,6 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
       );
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        
         // Обновляем локальные данные
         setState(() {
           _selectedMechanicsForRequest[request.id] = mechanicIds;
@@ -210,6 +738,11 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
               .map((id) => mechanics.firstWhere((m) => m.id == id))
               .toList();
         });
+        
+        // Автоматически меняем статус механиков на "занят"
+        for (final mechanicId in mechanicIds) {
+          await _updateMechanicStatusToBusy(mechanicId);
+        }
         
         // Обновляем список заявок
         await _loadAllRequests();
@@ -220,6 +753,38 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
       }
     } catch (e) {
       _showError('Ошибка назначения механиков: $e');
+    }
+  }
+
+  // НОВЫЙ МЕТОД: Автоматическое изменение статуса механика на "занят"
+  Future<void> _updateMechanicStatusToBusy(int mechanicId) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/mechanics/$mechanicId/status'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({
+          'status': 'занят',
+          'statusStartDate': null,
+          'statusEndDate': null,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _mechanicStatusData[mechanicId] = {
+            'status': 'занят',
+            'statusStartDate': null,
+            'statusEndDate': null,
+          };
+        });
+        
+        // Обновляем список механиков
+        await _loadServiceMechanics();
+      } else {
+        debugPrint('Ошибка обновления статуса механика на "занят": ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('Ошибка обновления статуса механика на "занят": $e');
     }
   }
 
@@ -255,7 +820,7 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
       _setDefaultPhoto();
 
     } catch (e) {
-      print('Ошибка загрузки фото пользователя: $e');
+      debugPrint('Ошибка загрузки фото пользователя: $e');
       _setDefaultPhoto();
     } finally {
       setState(() {
@@ -289,12 +854,12 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
             backgroundColor: Colors.white,
             backgroundImage: MemoryImage(base64Decode(photoBase64)),
             onBackgroundImageError: (exception, stackTrace) {
-              print('Ошибка загрузки изображения: $exception');
+              debugPrint('Ошибка загрузки изображения: $exception');
             },
           );
         }
       } catch (e) {
-        print('Ошибка декодирования base64 изображения: $e');
+        debugPrint('Ошибка декодирования base64 изображения: $e');
       }
     }
     
@@ -408,7 +973,7 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
         setState(() => _isLoading = false);
       }
     } catch (e) {
-      print('Ошибка загрузки данных пользователя: $e');
+      debugPrint('Ошибка загрузки данных пользователя: $e');
       setState(() => _isLoading = false);
     }
   }
@@ -429,7 +994,7 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
         setState(() => _isLoading = false);
       }
     } catch (e) {
-      print('Ошибка загрузки данных менеджера: $e');
+      debugPrint('Ошибка загрузки данных менеджера: $e');
       setState(() => _isLoading = false);
     }
   }
@@ -444,14 +1009,14 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
         });
       }
     } catch (e) {
-      print('Ошибка загрузки деталей сервиса: $e');
+      debugPrint('Ошибка загрузки деталей сервиса: $e');
       setState(() {
         serviceAddress = 'Адрес не указан';
       });
     }
   }
 
-  // ОБНОВЛЕННЫЙ МЕТОД ЗАГРУЗКИ ДАННЫХ
+  // ОБНОВЛЕННЫЙ МЕТОД ЗАГРУЗКИ ДАННЫХ (с загрузкой деталей ремонта)
   Future<void> _loadAllData() async {
     try {
       await Future.wait([
@@ -460,16 +1025,19 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
         _loadTransports(),
         _loadApplicants(),
         _loadServices(),
+        _loadMechanicsStatus(), // Загружаем статусы механиков
+        _loadMechanicNames(), // Загружаем имена механиков
       ]);
       
       // Загружаем назначенных механиков для каждой заявки
       for (var request in requests) {
         await _loadAssignedMechanicsForRequest(request.id);
+        await _loadRepairDetailsForRequest(request.id); // Загружаем детали ремонта
       }
       
       setState(() => _isLoading = false);
     } catch (e) {
-      print('Ошибка загрузки всех данных: $e');
+      debugPrint('Ошибка загрузки всех данных: $e');
       setState(() => _isLoading = false);
     }
   }
@@ -485,12 +1053,48 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
           requests = data.map((item) => Request.fromJson(item)).toList();
           // НЕ фильтруем по serviceId - показываем все заявки
         });
+        
+        // НОВЫЙ КОД: Проверяем закрытые заявки и освобождаем механиков
+        await _checkAndFreeMechanicsFromClosedRequests();
       }
     } catch (e) {
-      print('Error loading requests: $e');
+      debugPrint('Error loading requests: $e');
     }
   }
 
+  // НОВЫЙ МЕТОД: Проверка закрытых заявок и освобождение механиков
+  Future<void> _checkAndFreeMechanicsFromClosedRequests() async {
+    for (final request in requests) {
+      // Если заявка закрыта (имеет дату закрытия)
+      if (request.closedAt != null) {
+        // Получаем назначенных механиков для этой заявки
+        final assignedMechanics = _assignedMechanicsForRequest[request.id];
+        
+        if (assignedMechanics != null && assignedMechanics.isNotEmpty) {
+          for (final mechanic in assignedMechanics) {
+            // Проверяем, что механик все еще в статусе "занят"
+            final currentStatus = _mechanicStatusData[mechanic.id]?['status'] ?? 'свободен';
+            
+            if (currentStatus == 'занят') {
+              // Меняем статус на "свободен"
+              await _updateMechanicStatusToFree(mechanic.id);
+              
+              // Обновляем локальные данные
+              setState(() {
+                _mechanicStatusData[mechanic.id] = {
+                  'status': 'свободен',
+                  'statusStartDate': null,
+                  'statusEndDate': null,
+                };
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Обновленный метод загрузки механиков сервиса
   Future<void> _loadServiceMechanics() async {
     try {
       final response = await http.get(Uri.parse('$baseUrl/mechanics'));
@@ -506,9 +1110,73 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
             mechanics = allMechanics;
           }
         });
+        
+        // Загружаем статусы для каждого механика
+        for (final mechanic in mechanics) {
+          await _loadMechanicStatus(mechanic.id);
+        }
       }
     } catch (e) {
-      print('Error loading mechanics: $e');
+      debugPrint('Error loading mechanics: $e');
+    }
+  }
+
+  // НОВЫЙ МЕТОД: Загрузка статуса конкретного механика
+  Future<void> _loadMechanicStatus(int mechanicId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/mechanics/$mechanicId/status'),
+      );
+      
+      if (response.statusCode == 200) {
+        final statusData = json.decode(response.body);
+        
+        setState(() {
+          _mechanicStatusData[mechanicId] = {
+            'status': statusData['status'] ?? 'свободен',
+            'statusStartDate': statusData['statusStartDate'] != null 
+              ? DateTime.parse(statusData['statusStartDate'])
+              : null,
+            'statusEndDate': statusData['statusEndDate'] != null 
+              ? DateTime.parse(statusData['statusEndDate'])
+              : null,
+          };
+        });
+        
+        // Проверяем, не истек ли срок болезни/отпуска
+        _checkAndUpdateSingleExpiredStatus(mechanicId);
+      }
+    } catch (e) {
+      debugPrint('Ошибка загрузки статуса механика $mechanicId: $e');
+    }
+  }
+
+  // НОВЫЙ МЕТОД: Проверка и обновление истекшего статуса для конкретного механика
+  void _checkAndUpdateSingleExpiredStatus(int mechanicId) {
+    final now = DateTime.now();
+    final statusData = _mechanicStatusData[mechanicId];
+    
+    if (statusData != null) {
+      final status = statusData['status'] as String?;
+      final endDate = statusData['statusEndDate'] as DateTime?;
+      
+      // Если статус "болеет" или "в отпуске" и срок истек
+      if ((status == 'болеет' || status == 'в отпуске') && 
+          endDate != null && 
+          now.isAfter(endDate)) {
+        
+        // Автоматически меняем статус на "свободен"
+        setState(() {
+          _mechanicStatusData[mechanicId] = {
+            'status': 'свободен',
+            'statusStartDate': null,
+            'statusEndDate': null,
+          };
+        });
+        
+        // Обновляем статус на сервере (в фоновом режиме)
+        _updateMechanicStatusToFree(mechanicId);
+      }
     }
   }
 
@@ -522,7 +1190,7 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
         });
       }
     } catch (e) {
-      print('Error loading transports: $e');
+      debugPrint('Error loading transports: $e');
     }
   }
 
@@ -536,7 +1204,7 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
         });
       }
     } catch (e) {
-      print('Error loading applicants: $e');
+      debugPrint('Error loading applicants: $e');
     }
   }
 
@@ -550,7 +1218,7 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
         });
       }
     } catch (e) {
-      print('Error loading services: $e');
+      debugPrint('Error loading services: $e');
     }
   }
 
@@ -572,7 +1240,7 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
     );
   }
 
-  // НОВЫЙ МЕТОД ДЛЯ ПОКАЗА ДЕТАЛЕЙ ЗАЯВКИ ВО ВЕСЬ ЭКРАН (как у заявителя)
+  // НОВЫЙ МЕТОД ДЛЯ ПОКАЗА ДЕТАЛЕЙ ЗАЯВКИ ВО ВЕСЬ ЭКРАН (теперь с деталями ремонта)
   void _showRequestDetails(Request request) {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -584,6 +1252,9 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
           mechanics: mechanics,
           assignedMechanics: _assignedMechanicsForRequest[request.id] ?? [],
           onAssignMechanics: () => _showAssignMechanicsDialog(request),
+          mechanicStatusData: _mechanicStatusData,
+          repairDetails: _repairDetailsByRequest[request.id] ?? [], // Передаем детали ремонта
+          mechanicNames: _mechanicNames, // Передаем имена механиков
         ),
       ),
     );
@@ -704,6 +1375,8 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
       
       if (response.statusCode == 200) {
         await _loadServiceMechanics();
+        await _loadMechanicsStatus();
+        await _loadMechanicNames();
         _clearMechanicForm();
         _showSuccess('Механик успешно создан');
       } else {
@@ -730,6 +1403,11 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
 
       if (response.statusCode == 200) {
         await _loadServiceMechanics();
+        // Удаляем статус из локального хранилища
+        setState(() {
+          _mechanicStatusData.remove(mechanic.id);
+          _mechanicNames.remove(mechanic.id);
+        });
         _showSuccess('Механик удален');
       } else {
         _showError('Ошибка удаления механика: ${response.statusCode}');
@@ -791,6 +1469,18 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
     return filtered;
   }
 
+  // НОВЫЙ МЕТОД: Получение форматированного описания проблемы для карточки
+  String _getFormattedProblemPreview(String description) {
+    String cleanedDescription = description.replaceAll(RegExp(r'!+$'), '');
+    List<String> problems = cleanedDescription.split('!').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+    
+    if (problems.isNotEmpty) {
+      return '1. ${problems[0]}';
+    }
+    
+    return 'Проблема не указана';
+  }
+
   // ОБНОВЛЕННЫЙ МЕТОД ДЛЯ КАРТОЧКИ ЗАЯВКИ
   Widget _buildRequestCard(Request request) {
     final transport = transports.firstWhere(
@@ -803,6 +1493,9 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
     
     // Получаем количество назначенных механиков
     final assignedCount = _assignedMechanicsForRequest[request.id]?.length ?? 0;
+    
+    // Получаем детали ремонта
+    final repairDetailsCount = _repairDetailsByRequest[request.id]?.length ?? 0;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
@@ -845,9 +1538,11 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 8),
-                    // Описание проблемы (первая строка)
+                    // Описание проблемы
                     Text(
-                      request.problem.split('\n').first,
+                      (request.problemDescription?.isNotEmpty ?? false) 
+                        ? _getFormattedProblemPreview(request.problemDescription!)
+                        : _getFormattedProblemPreview(request.problem),
                       style: const TextStyle(
                         fontSize: 14,
                         color: Colors.black87,
@@ -856,24 +1551,46 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 8),
-                    // Информация о механиках
-                    if (assignedCount > 0)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Row(
-                          children: [
-                            Icon(Icons.people, size: 16, color: Colors.blue),
-                            const SizedBox(width: 4),
-                            Text(
-                              '$assignedCount механик${assignedCount == 1 ? '' : (assignedCount > 1 && assignedCount < 5 ? 'а' : 'ов')}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.blue[700],
-                              ),
+                    // Информация о механиках и деталях ремонта
+                    Row(
+                      children: [
+                        if (assignedCount > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 12),
+                            child: Row(
+                              children: [
+                                Icon(Icons.people, size: 14, color: Colors.blue),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '$assignedCount',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blue[700],
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ),
+                          ),
+                        
+                        if (repairDetailsCount > 0)
+                          Row(
+                            children: [
+                              Icon(Icons.build_circle, size: 14, color: Colors.green),
+                              const SizedBox(width: 4),
+                              Text(
+                                '$repairDetailsCount',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.green[700],
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
                     // Статус заявки
                     Row(
                       children: [
@@ -922,7 +1639,7 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
           final decoded = json.decode(photoData) as List;
           photoList = decoded.cast<String>();
         } catch (e) {
-          print('Ошибка декодирования JSON: $e');
+          debugPrint('Ошибка декодирования JSON: $e');
           photoList = [photoData];
         }
       } else {
@@ -949,11 +1666,134 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
         ),
       );
     } catch (e) {
-      print('Ошибка загрузки изображения транспорта: $e');
+      debugPrint('Ошибка загрузки изображения транспорта: $e');
       return const Center(
         child: Icon(Icons.directions_bus, size: 40, color: Colors.grey),
       );
     }
+  }
+
+  // Обновленный метод построения карточки механика во вкладке механиков
+  Widget _buildMechanicCard(Mechanic mechanic) {
+    final status = _mechanicStatusData[mechanic.id]?['status'] ?? 'свободен';
+    final statusColor = _getMechanicStatusColor(status);
+    final statusIcon = _getMechanicStatusIcon(status);
+    
+    // Форматируем даты если есть
+    String datesText = '';
+    if ((status == 'болеет' || status == 'в отпуске') && 
+        _mechanicStatusData[mechanic.id]?['statusStartDate'] != null &&
+        _mechanicStatusData[mechanic.id]?['statusEndDate'] != null) {
+      datesText = _formatMechanicStatusDates(
+        _mechanicStatusData[mechanic.id]?['statusStartDate'],
+        _mechanicStatusData[mechanic.id]?['statusEndDate'],
+      );
+    }
+    
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+      child: ListTile(
+        leading: _buildAvatar(mechanic.photo, 20),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(mechanic.name),
+            
+            // Статус механика
+            Row(
+              children: [
+                Icon(
+                  statusIcon,
+                  size: 14,
+                  color: statusColor,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  status,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: statusColor,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            
+            // Даты если есть
+            if (datesText.isNotEmpty)
+              Text(
+                datesText,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.grey[600],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+          ],
+        ),
+        subtitle: Text(mechanic.email),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Icon(Icons.edit, color: Colors.blue),
+              onPressed: () => _showMechanicStatusDialog(mechanic),
+              tooltip: 'Изменить статус',
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete, color: Colors.red),
+              onPressed: () => _deleteMechanic(mechanic),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Обновленный метод для вкладки механиков
+  Widget _buildMechanicsTab() {
+    return _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: ElevatedButton.icon(
+                  onPressed: _showAddMechanicDialog,
+                  icon: const Icon(Icons.person_add),
+                  label: const Text('Добавить механика'),
+                ),
+              ),
+              Expanded(
+                child: mechanics.isEmpty
+                    ? const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.engineering, size: 80, color: Colors.grey),
+                            SizedBox(height: 16),
+                            Text(
+                              'Механиков нет',
+                              style: TextStyle(fontSize: 18, color: Colors.grey),
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              'Добавьте механиков для вашего сервиса',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: mechanics.length,
+                        itemBuilder: (context, index) {
+                          final mechanic = mechanics[index];
+                          return _buildMechanicCard(mechanic);
+                        },
+                      ),
+              ),
+            ],
+          );
   }
 
   void _showSortFilterDialog() {
@@ -1356,8 +2196,8 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
                     const SizedBox(height: 30),
                     SizedBox(
                       width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
+      height: 50,
+      child: ElevatedButton(
                         onPressed: _updateProfile,
                         child: const Text('Сохранить изменения'),
                       ),
@@ -1488,45 +2328,7 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
                                 },
                               ),
                     // Вкладка механиков
-                    _isLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : Column(
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.all(16.0),
-                                child: ElevatedButton.icon(
-                                  onPressed: _showAddMechanicDialog,
-                                  icon: const Icon(Icons.person_add),
-                                  label: const Text('Добавить механика'),
-                                ),
-                              ),
-                              Expanded(
-                                child: mechanics.isEmpty
-                                    ? const Center(child: Text('Механиков нет'))
-                                    : ListView.builder(
-                                        itemCount: mechanics.length,
-                                        itemBuilder: (context, index) {
-                                          final mechanic = mechanics[index];
-                                          return Card(
-                                            margin: const EdgeInsets.symmetric(
-                                                vertical: 4, horizontal: 8),
-                                            child: ListTile(
-                                              leading: _buildAvatar(mechanic.photo, 20),
-                                              title: Text(mechanic.name),
-                                              subtitle: Text(mechanic.email),
-                                              trailing: IconButton(
-                                                icon: const Icon(Icons.delete,
-                                                    color: Colors.red),
-                                                onPressed: () =>
-                                                    _deleteMechanic(mechanic),
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                              ),
-                            ],
-                          ),
+                    _buildMechanicsTab(),
                   ],
                 ),
               ),
@@ -1553,7 +2355,7 @@ class _ManagerMenuState extends State<ManagerMenu> with SingleTickerProviderStat
   }
 }
 
-// Класс для экрана статистики на весь экран
+// Класс для экрана статистики на весь экран - ИЗМЕНЕН ДЛЯ СТАТИСТИКИ ПО ПРОБЛЕМАМ
 class StatisticsScreen extends StatefulWidget {
   final List<Request> requests;
 
@@ -1567,66 +2369,157 @@ class StatisticsScreen extends StatefulWidget {
 }
 
 class _StatisticsScreenState extends State<StatisticsScreen> {
-  late Map<String, int> _monthlyRequests;
+  late Map<String, int> _problemStatistics;
+  late Map<String, List<Request>> _problemToRequestsMap;
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _calculateMonthlyStatistics();
+    _calculateProblemStatistics();
   }
 
-  // Метод для вычисления статистики локально из загруженных данных
-  void _calculateMonthlyStatistics() {
-    final now = DateTime.now();
-    final monthlyRequests = <String, int>{};
+  // ИЗМЕНЕННЫЙ МЕТОД: Теперь статистика основывается на перечне проблем
+  void _calculateProblemStatistics() {
+    final problemStatistics = <String, int>{};
+    final problemToRequestsMap = <String, List<Request>>{};
     
-    // Инициализируем последние 6 месяцев
-    for (int i = 5; i >= 0; i--) {
-      final month = DateTime(now.year, now.month - i);
-      final monthKey = '${_getMonthName(month.month)} ${month.year}';
-      monthlyRequests[monthKey] = 0;
-    }
-    
-    // Подсчитываем заявки по месяцам
+    // Обрабатываем все заявки
     for (final request in widget.requests) {
-      final monthKey = '${_getMonthName(request.submittedAt.month)} ${request.submittedAt.year}';
-      if (monthlyRequests.containsKey(monthKey)) {
-        monthlyRequests[monthKey] = monthlyRequests[monthKey]! + 1;
+      // Проверяем, есть ли данные о проблемах в формате списка
+      if (request.problems?.isNotEmpty ?? false) {
+        // Если есть структурированный список проблем
+        for (final problem in request.problems!) {
+          final problemName = problem['name'] ?? 'Неизвестная проблема';
+          
+          // Увеличиваем счетчик для этой проблемы
+          problemStatistics[problemName] = (problemStatistics[problemName] ?? 0) + 1;
+          
+          // Добавляем заявку в мапу для этой проблемы
+          if (!problemToRequestsMap.containsKey(problemName)) {
+            problemToRequestsMap[problemName] = [];
+          }
+          problemToRequestsMap[problemName]!.add(request);
+        }
+      } else {
+        // Если нет структурированного списка, анализируем текстовое описание
+        final problemText = (request.problemDescription?.isNotEmpty ?? false) 
+            ? request.problemDescription! 
+            : request.problem;
+        
+        // Очищаем текст от разделителей
+        String cleanedDescription = problemText.replaceAll(RegExp(r'!+$'), '');
+        List<String> problems = cleanedDescription.split('!')
+            .map((p) => p.trim())
+            .where((p) => p.isNotEmpty)
+            .toList();
+        
+        if (problems.isNotEmpty) {
+          // Берем первую проблему как основную
+          final mainProblem = problems[0];
+          problemStatistics[mainProblem] = (problemStatistics[mainProblem] ?? 0) + 1;
+          
+          // Добавляем заявку в мапу для этой проблемы
+          if (!problemToRequestsMap.containsKey(mainProblem)) {
+            problemToRequestsMap[mainProblem] = [];
+          }
+          problemToRequestsMap[mainProblem]!.add(request);
+        } else {
+          // Если проблем нет, используем общее описание
+          final fallbackProblem = 'Общая проблема';
+          problemStatistics[fallbackProblem] = (problemStatistics[fallbackProblem] ?? 0) + 1;
+          
+          if (!problemToRequestsMap.containsKey(fallbackProblem)) {
+            problemToRequestsMap[fallbackProblem] = [];
+          }
+          problemToRequestsMap[fallbackProblem]!.add(request);
+        }
       }
     }
     
+    // Сортируем по количеству заявок (по убыванию)
+    final sortedEntries = problemStatistics.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    
+    final sortedStatistics = <String, int>{};
+    for (final entry in sortedEntries) {
+      sortedStatistics[entry.key] = entry.value;
+    }
+    
     setState(() {
-      _monthlyRequests = monthlyRequests;
+      _problemStatistics = sortedStatistics;
+      _problemToRequestsMap = problemToRequestsMap;
       _isLoading = false;
     });
   }
 
-  // Метод для получения названия месяца по номеру
-  String _getMonthName(int month) {
-    switch (month) {
-      case 1: return 'Январь';
-      case 2: return 'Февраль';
-      case 3: return 'Март';
-      case 4: return 'Апрель';
-      case 5: return 'Май';
-      case 6: return 'Июнь';
-      case 7: return 'Июль';
-      case 8: return 'Август';
-      case 9: return 'Сентябрь';
-      case 10: return 'Октябрь';
-      case 11: return 'Ноябрь';
-      case 12: return 'Декабрь';
-      default: return 'Месяц $month';
-    }
+  // Метод для форматирования даты
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}';
   }
 
   // Метод для определения цвета в зависимости от количества заявок
   Color _getCountColor(int count) {
     if (count == 0) return Colors.grey;
-    if (count <= 5) return Colors.green;
-    if (count <= 15) return Colors.orange;
+    if (count <= 3) return Colors.green;
+    if (count <= 10) return Colors.orange;
     return Colors.red;
+  }
+
+  // Метод для показа деталей по конкретной проблеме
+  void _showProblemDetails(String problemName, List<Request> requests) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Заявки с проблемой: $problemName'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 400,
+            child: Column(
+              children: [
+                Text(
+                  'Всего заявок: ${requests.length}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: requests.length,
+                    itemBuilder: (context, index) {
+                      final request = requests[index];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          title: Text('Заявка #${request.id}'),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Дата: ${_formatDate(request.submittedAt)}'),
+                              Text('Статус: ${request.status}'),
+                            ],
+                          ),
+                          trailing: const Icon(Icons.arrow_forward),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Закрыть'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -1645,7 +2538,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               setState(() {
                 _isLoading = true;
               });
-              _calculateMonthlyStatistics();
+              _calculateProblemStatistics();
             },
             tooltip: 'Обновить статистику',
           ),
@@ -1684,7 +2577,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Количество поданных заявок за месяц',
+                                'Статистика поломок по типам проблем',
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -1692,7 +2585,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                                 ),
                               ),
                               Text(
-                                'Последние 6 месяцев',
+                                'Всего различных проблем: ${_problemStatistics.length}',
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: Colors.blue[600],
@@ -1705,61 +2598,66 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                     ),
                   ),
                   
-                  // Список месяцев со статистикой
-                  if (_monthlyRequests.isNotEmpty)
+                  // Список проблем со статистикой
+                  if (_problemStatistics.isNotEmpty)
                     Column(
-                      children: _monthlyRequests.entries.map((entry) {
-                        final month = entry.key;
+                      children: _problemStatistics.entries.map((entry) {
+                        final problemName = entry.key;
                         final count = entry.value;
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[50],
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey[300]!),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      month,
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w500,
+                        final requestsForProblem = _problemToRequestsMap[problemName] ?? [];
+                        
+                        return GestureDetector(
+                          onTap: () => _showProblemDetails(problemName, requestsForProblem),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[50],
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey[300]!),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        problemName,
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '$count заявок',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: Colors.grey[600],
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '$count заявок',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.grey[600],
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              // Индикатор
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: _getCountColor(count),
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: Text(
-                                  count.toString(),
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
+                                    ],
                                   ),
                                 ),
-                              ),
-                            ],
+                                // Индикатор
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: _getCountColor(count),
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Text(
+                                    count.toString(),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         );
                       }).toList(),
@@ -1772,7 +2670,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                           Icon(Icons.bar_chart, size: 80, color: Colors.grey),
                           SizedBox(height: 16),
                           Text(
-                            'Нет данных за последние месяцы',
+                            'Нет данных о проблемах',
                             style: TextStyle(fontSize: 16, color: Colors.grey),
                           ),
                         ],
@@ -1810,7 +2708,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                                 style: const TextStyle(fontSize: 14),
                               ),
                               Text(
-                                'Период: ${_monthlyRequests.keys.isNotEmpty ? '${_monthlyRequests.keys.first} - ${_monthlyRequests.keys.last}' : 'Нет данных'}',
+                                'Уникальных проблем: ${_problemStatistics.length}',
                                 style: const TextStyle(fontSize: 14),
                               ),
                             ],
@@ -1822,73 +2720,97 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
                   
                   const SizedBox(height: 30),
                   
-                  // Диаграмма (простая гистограмма)
-                  const Text(
-                    'Гистограмма заявок',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    height: 200,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey[300]!),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: _monthlyRequests.entries.map((entry) {
-                        final month = entry.key.split(' ')[0]; // Берем только название месяца
-                        final count = entry.value;
-                        final maxCount = _monthlyRequests.values.reduce((a, b) => a > b ? a : b);
-                        final height = maxCount > 0 ? (count / maxCount) * 150.0 : 10.0;
-                        
-                        return Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Text(
-                              count.toString(),
-                              style: const TextStyle(
+                  // Диаграмма (простая гистограмма) проблем
+                  if (_problemStatistics.isNotEmpty)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Гистограмма проблем',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          height: 250,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey[300]!),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: _problemStatistics.entries.take(6).map((entry) {
+                              final problemName = entry.key;
+                              final count = entry.value;
+                              final maxCount = _problemStatistics.values.reduce((a, b) => a > b ? a : b);
+                              final height = maxCount > 0 ? (count / maxCount) * 150.0 : 10.0;
+                              
+                              // Сокращаем название проблемы для отображения
+                              String displayName = problemName;
+                              if (problemName.length > 15) {
+                                displayName = '${problemName.substring(0, 12)}...';
+                              }
+                              
+                              return Column(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  Text(
+                                    count.toString(),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    width: 50,
+                                    height: height,
+                                    decoration: BoxDecoration(
+                                      color: _getCountColor(count),
+                                      borderRadius: const BorderRadius.only(
+                                        topLeft: Radius.circular(4),
+                                        topRight: Radius.circular(4),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  SizedBox(
+                                    width: 60,
+                                    child: Text(
+                                      displayName,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      maxLines: 2,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                        if (_problemStatistics.length > 6)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              'Показано топ-6 проблем из ${_problemStatistics.length}',
+                              style: TextStyle(
                                 fontSize: 12,
-                                fontWeight: FontWeight.bold,
+                                color: Colors.grey[600],
+                                fontStyle: FontStyle.italic,
                               ),
                             ),
-                            const SizedBox(height: 4),
-                            Container(
-                              width: 40,
-                              height: height,
-                              decoration: BoxDecoration(
-                                color: _getCountColor(count),
-                                borderRadius: const BorderRadius.only(
-                                  topLeft: Radius.circular(4),
-                                  topRight: Radius.circular(4),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            SizedBox(
-                              width: 60,
-                              child: Text(
-                                month,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                                maxLines: 2,
-                              ),
-                            ),
-                          ],
-                        );
-                      }).toList(),
+                          ),
+                      ],
                     ),
-                  ),
                   
                   const SizedBox(height: 30),
                 ],
@@ -1906,6 +2828,9 @@ class RequestDetailsScreen extends StatelessWidget {
   final List<Mechanic> mechanics;
   final List<Mechanic> assignedMechanics;
   final VoidCallback onAssignMechanics;
+  final Map<int, Map<String, dynamic>> mechanicStatusData;
+  final List<RepairDetail> repairDetails;
+  final Map<int, String> mechanicNames; // mechanicId -> name
 
   const RequestDetailsScreen({
     super.key,
@@ -1915,7 +2840,305 @@ class RequestDetailsScreen extends StatelessWidget {
     required this.mechanics,
     required this.assignedMechanics,
     required this.onAssignMechanics,
+    required this.mechanicStatusData,
+    this.repairDetails = const [],
+    this.mechanicNames = const {},
   });
+
+  // НОВЫЙ ВИДЖЕТ для отображения деталей ремонта (для менеджера)
+  Widget _buildRepairDetailsSection() {
+    if (repairDetails.isEmpty) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        child: const Center(
+          child: Text(
+            'Детали ремонта не добавлены',
+            style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
+          ),
+        ),
+      );
+    }
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 24),
+        const Text(
+          'Детали ремонта',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.blue,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.blue[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.blue[200]!),
+          ),
+          child: Column(
+            children: [
+              // Заголовок таблицы
+              Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      'Деталь',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue[700],
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      'Кол-во',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue[700],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      'Артикул',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue[700],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      'Механик',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue[700],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(color: Colors.blue),
+              // Список деталей
+              ...repairDetails.map((detail) {
+                final mechanicName = mechanicNames[detail.mechanicId] ?? 'Неизвестно';
+                
+                return Container(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    border: Border(bottom: BorderSide(color: Colors.blue[100]!)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: Text(
+                          detail.partName,
+                          style: const TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          '${detail.quantity} шт.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          detail.partNumber ?? '-',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: detail.partNumber == null ? Colors.grey : Colors.black,
+                            fontStyle: detail.partNumber == null ? FontStyle.italic : FontStyle.normal,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          mechanicName,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ],
+          ),
+        ),
+      ]
+    );
+  }
+
+  // Форматирование описания проблемы
+  List<Widget> _formatProblemDescription(String description) {
+    String cleanedDescription = description.replaceAll(RegExp(r'!+$'), '');
+    List<String> problems = cleanedDescription.split('!')
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty)
+        .toList();
+    
+    return problems.asMap().entries.map((entry) {
+      final index = entry.key;
+      final problem = entry.value;
+      
+      return Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.blue[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.blue[200]!),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.blue,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${index + 1}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                problem,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  // Построение списка проблем
+  Widget _buildProblemsList() {
+    // Проверяем, есть ли данные о проблемах в формате списка
+    if (request.problems?.isNotEmpty ?? false) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Перечень проблем:',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.blue,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...request.problems!.asMap().entries.map((entry) {
+            final index = entry.key;
+            final problem = entry.value;
+            
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue[200]!),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.blue,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${index + 1}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          problem['name'] ?? 'Проблема',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        if (problem['description'] != null && problem['description']!.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              problem['description']!,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ],
+      );
+    }
+    
+    // Если данных в формате списка нет, используем текстовое описание
+    final problemText = (request.problemDescription?.isNotEmpty ?? false) 
+        ? request.problemDescription! 
+        : request.problem;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Перечень проблем:',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.blue,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ..._formatProblemDescription(problemText),
+      ],
+    );
+  }
 
   String _getRequestStatus() {
     if (request.status == 'временно отклонена' || request.status == 'отклонена') {
@@ -1945,6 +3168,47 @@ class RequestDetailsScreen extends StatelessWidget {
     }
   }
 
+  // НОВЫЙ МЕТОД: Получение цвета статуса механика
+  Color _getMechanicStatusColor(String status) {
+    switch (status) {
+      case 'свободен': return Colors.green;
+      case 'занят': return Colors.orange;
+      case 'болеет': return Colors.red;
+      case 'в отпуске': return Colors.blue;
+      default: return Colors.grey;
+    }
+  }
+
+  // НОВЫЙ МЕТОД: Получение иконки статуса механика
+  IconData _getMechanicStatusIcon(String status) {
+    switch (status) {
+      case 'свободен': return Icons.check_circle;
+      case 'занят': return Icons.work;
+      case 'болеет': return Icons.local_hospital;
+      case 'в отпуске': return Icons.beach_access;
+      default: return Icons.help;
+    }
+  }
+
+  // НОВЫЙ МЕТОД: Форматирование дат статуса
+  String _formatMechanicStatusDates(DateTime? startDate, DateTime? endDate) {
+    if (startDate == null || endDate == null) return '';
+    
+    final startStr = _formatDate(startDate);
+    final endStr = _formatDate(endDate);
+    
+    return '$startStr - $endStr';
+  }
+
+  // Метод для форматирования даты
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}';
+  }
+
+  String _formatDateTime(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
   Widget _buildDetailRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1966,7 +3230,7 @@ class RequestDetailsScreen extends StatelessWidget {
             ),
           ),
         ],
-      ),
+      )
     );
   }
 
@@ -1985,7 +3249,7 @@ class RequestDetailsScreen extends StatelessWidget {
           final decoded = json.decode(photoData) as List;
           photoList = decoded.cast<String>();
         } catch (e) {
-          print('Ошибка декодирования JSON фото: $e');
+          debugPrint('Ошибка декодирования JSON фото: $e');
           photoList = [photoData];
         }
       } else {
@@ -1994,7 +3258,7 @@ class RequestDetailsScreen extends StatelessWidget {
 
       return photoList;
     } catch (e) {
-      print('Ошибка получения фотографий транспорта: $e');
+      debugPrint('Ошибка получения фотографий транспорта: $e');
       return [];
     }
   }
@@ -2080,46 +3344,17 @@ class RequestDetailsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _buildDetailRow('Номер заявки:', '#${request.id}'),
-            _buildDetailRow('Дата создания:', 
-              '${request.submittedAt.day}.${request.submittedAt.month}.${request.submittedAt.year} ${request.submittedAt.hour}:${request.submittedAt.minute.toString().padLeft(2, '0')}'),
+            _buildDetailRow('Дата создания:', _formatDateTime(request.submittedAt)),
             if (request.closedAt != null)
-              _buildDetailRow('Дата закрытия:', 
-                '${request.closedAt!.day}.${request.closedAt!.month}.${request.closedAt!.year}'),
+              _buildDetailRow('Дата закрытия:', _formatDate(request.closedAt!)),
             _buildDetailRow('Сервисный центр:', service.address),
             if (service.workTime.isNotEmpty)
               _buildDetailRow('Время работы:', service.workTime),
             
             const SizedBox(height: 24),
             
-            // Перечень проблем - нумерованный список
-            const Text(
-              'Перечень проблем',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.blue,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey[300]!),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ...request.problem.split('\n').where((line) => line.trim().isNotEmpty).toList().asMap().entries.map(
-                    (entry) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Text('${entry.key + 1}. ${entry.value.trim()}'),
-                    ),
-                  ).toList(),
-                ],
-              ),
-            ),
+            // Перечень проблем
+            _buildProblemsList(),
             
             const SizedBox(height: 24),
             
@@ -2171,6 +3406,11 @@ class RequestDetailsScreen extends StatelessWidget {
                   const SizedBox(height: 24),
                 ],
               ),
+            
+            // Детали ремонта (добавлено для менеджера)
+            _buildRepairDetailsSection(),
+            
+            const SizedBox(height: 24),
             
             // Данные транспорта
             const Text(
@@ -2280,13 +3520,64 @@ class RequestDetailsScreen extends StatelessWidget {
             
             if (assignedMechanics.isNotEmpty)
               ...assignedMechanics.map((mechanic) {
+                final status = mechanicStatusData[mechanic.id]?['status'] ?? 'свободен';
+                final statusColor = _getMechanicStatusColor(status);
+                final statusIcon = _getMechanicStatusIcon(status);
+                
+                // Форматируем даты если есть
+                String datesText = '';
+                if ((status == 'болеет' || status == 'в отпуске') && 
+                    mechanicStatusData[mechanic.id]?['statusStartDate'] != null &&
+                    mechanicStatusData[mechanic.id]?['statusEndDate'] != null) {
+                  datesText = _formatMechanicStatusDates(
+                    mechanicStatusData[mechanic.id]?['statusStartDate'],
+                    mechanicStatusData[mechanic.id]?['statusEndDate'],
+                  );
+                }
+                
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
                     leading: CircleAvatar(
                       child: Text(mechanic.name[0]),
                     ),
-                    title: Text(mechanic.name),
+                    title: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(mechanic.name),
+                        
+                        // Статус механика
+                        Row(
+                          children: [
+                            Icon(
+                              statusIcon,
+                              size: 14,
+                              color: statusColor,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              status,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: statusColor,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        
+                        // Даты если есть
+                        if (datesText.isNotEmpty)
+                          Text(
+                            datesText,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey[600],
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                      ],
+                    ),
                     subtitle: Text(mechanic.email),
                   ),
                 );
@@ -2331,7 +3622,7 @@ class RequestDetailsScreen extends StatelessWidget {
   }
 }
 
-// Модели данных - ОТДЕЛЬНО от класса RequestDetailsScreen
+// Модели данных
 class Request {
   final int id;
   final String problem;
@@ -2346,6 +3637,8 @@ class Request {
   final Map<String, dynamic>? applicant;
   final Map<String, dynamic>? transport;
   final Map<String, dynamic>? mechanic;
+  final String? problemDescription;
+  final List<Map<String, dynamic>>? problems;
 
   Request({
     required this.id,
@@ -2361,6 +3654,8 @@ class Request {
     this.applicant,
     this.transport,
     this.mechanic,
+    this.problemDescription,
+    this.problems,
   });
 
   factory Request.fromJson(Map<String, dynamic> json) {
@@ -2378,6 +3673,10 @@ class Request {
       applicant: json['applicant'] is Map ? Map<String, dynamic>.from(json['applicant']) : null,
       transport: json['transport'] is Map ? Map<String, dynamic>.from(json['transport']) : null,
       mechanic: json['mechanic'] is Map ? Map<String, dynamic>.from(json['mechanic']) : null,
+      problemDescription: json['problemDescription'],
+      problems: json['problems'] != null && json['problems'] is List
+          ? List<Map<String, dynamic>>.from(json['problems'])
+          : null,
     );
   }
 }
@@ -2388,6 +3687,9 @@ class Mechanic {
   final String email;
   final String? photo;
   final int serviceId;
+  final String? status;
+  final DateTime? statusStartDate;
+  final DateTime? statusEndDate;
 
   Mechanic({
     required this.id,
@@ -2395,6 +3697,9 @@ class Mechanic {
     required this.email,
     required this.serviceId,
     this.photo,
+    this.status,
+    this.statusStartDate,
+    this.statusEndDate,
   });
 
   factory Mechanic.fromJson(Map<String, dynamic> json) {
@@ -2404,6 +3709,13 @@ class Mechanic {
       email: json['email'] ?? 'Неизвестно',
       serviceId: json['serviceId'] ?? 0,
       photo: json['photo'],
+      status: json['status'],
+      statusStartDate: json['statusStartDate'] != null 
+        ? DateTime.parse(json['statusStartDate'])
+        : null,
+      statusEndDate: json['statusEndDate'] != null 
+        ? DateTime.parse(json['statusEndDate'])
+        : null,
     );
   }
 }
@@ -2466,6 +3778,36 @@ class Service {
       id: json['id'] ?? 0,
       address: json['address'] ?? 'Адрес не указан',
       workTime: json['workTime'] ?? '',
+    );
+  }
+}
+
+// ДОБАВЛЕННЫЙ КЛАСС для деталей ремонта
+class RepairDetail {
+  final int id;
+  final int requestId;
+  final int mechanicId;
+  final String partName;
+  final String? partNumber;
+  final double quantity;
+
+  RepairDetail({
+    required this.id,
+    required this.requestId,
+    required this.mechanicId,
+    required this.partName,
+    this.partNumber,
+    required this.quantity,
+  });
+
+  factory RepairDetail.fromJson(Map<String, dynamic> json) {
+    return RepairDetail(
+      id: json['id'] ?? 0,
+      requestId: json['requestId'] ?? 0,
+      mechanicId: json['mechanicId'] ?? 0,
+      partName: json['partName'] ?? '',
+      partNumber: json['partNumber'],
+      quantity: (json['quantity'] as num).toDouble(),
     );
   }
 }
