@@ -15,6 +15,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'BKM Service',
       theme: ThemeData(primarySwatch: Colors.blue),
+      locale: const Locale('en', 'US'),
       home: const LoginScreen(),
       routes: {
         '/login': (context) => const LoginScreen(),

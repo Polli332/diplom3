@@ -1,5 +1,4 @@
 import 'dart:developer' as developer;
-
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
@@ -16,6 +15,10 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  // Определяем кастомный цвет
+  static const Color primaryColor = Color(0xFFF5BC38);
+  static const Color primaryColorDark = Color(0xFFD4A22F); // Немного темнее для hover эффектов
+  
   final _formKey = GlobalKey<FormState>();
   bool isLogin = true;
   final TextEditingController emailCtl = TextEditingController();
@@ -64,7 +67,7 @@ class _LoginScreenState extends State<LoginScreen> {
         await prefs.setString('user_email', adminEmail);
         await prefs.setString('user_role', 'admin');
         
-        print(' Успешный вход как администратор');
+        print('✅ Успешный вход как администратор');
         
         if (mounted) {
           Navigator.pushAndRemoveUntil(
@@ -77,15 +80,15 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       
       // Обычный вход через сервер
-      print(' Вход пользователя: ${emailCtl.text}');
+      print('🔐 Вход пользователя: ${emailCtl.text}');
       final user = await ApiService.login(
         emailCtl.text.trim(), 
         passCtl.text.trim()
       );
-      print(' Успешный вход: ${user.role}');
+      print('✅ Успешный вход: ${user.role}');
       await _saveAndNavigate(user);
     } catch (e) {
-      print(' Ошибка входа: $e');
+      print('❌ Ошибка входа: $e');
       _showError('Ошибка входа: ${e.toString()}');
     } finally {
       if (mounted) {
@@ -203,24 +206,8 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: Text(isLogin ? 'Вход в систему' : 'Регистрация'),
-        backgroundColor: Theme.of(context).primaryColor,
+        backgroundColor: primaryColor, // <-- ИЗМЕНЕНО ЗДЕСЬ
         foregroundColor: Colors.white,
-        /*actions: [
-          // Кнопка для тестовых данных
-          /*if (!_loading)
-            IconButton(
-              icon: const Icon(Icons.bug_report),
-              onPressed: _fillTestData,
-              tooltip: 'Заполнить тестовые данные',
-            ),*/
-          // Кнопка очистки формы
-          /*if (!_loading)
-            IconButton(
-              icon: const Icon(Icons.clear_all),
-              onPressed: _clearForm,
-              tooltip: 'Очистить форму',
-            ),*/
-        ],*/
       ),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
@@ -237,13 +224,13 @@ class _LoginScreenState extends State<LoginScreen> {
                         width: 80,
                         height: 80,
                         decoration: BoxDecoration(
-                          color: Theme.of(context).primaryColor.withOpacity(0.1),
+                          color: primaryColor.withOpacity(0.1), // <-- ИЗМЕНЕНО ЗДЕСЬ
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
                           isLogin ? Icons.login : Icons.person_add,
                           size: 40,
-                          color: Theme.of(context).primaryColor,
+                          color: primaryColor, // <-- ИЗМЕНЕНО ЗДЕСЬ
                         ),
                       ),
                       const SizedBox(height: 20),
@@ -342,8 +329,8 @@ class _LoginScreenState extends State<LoginScreen> {
                               ? null 
                               : (isLogin ? _doLogin : _doRegister),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Theme.of(context).primaryColor,
-                            foregroundColor: Colors.white,
+                            backgroundColor: primaryColor, // <-- ИЗМЕНЕНО ЗДЕСЬ
+                            foregroundColor: const Color.fromARGB(255, 0, 0, 0),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
@@ -390,53 +377,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: Text(
                               isLogin ? 'Зарегистрируйтесь' : 'Войти',
                               style: TextStyle(
-                                color: Theme.of(context).primaryColor,
+                                color: primaryColor, // <-- ИЗМЕНЕНО ЗДЕСЬ
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
                         ],
                       ),
-
-                      // Информация о тестовых данных
-                      /*if (isLogin) ...[
-                        const SizedBox(height: 30),
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.blue[50],
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.blue[100]!),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              /*Row(
-                                children: [
-                                  Icon(
-                                    Icons.info_outline,
-                                    color: Colors.blue[700],
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  /*const Text(
-                                    'Тестовые данные',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue,
-                                    ),
-                                  ),*/
-                                ],
-                              ),*/
-                              /*const SizedBox(height: 8),
-                              const Text(
-                                'Для быстрой проверки используйте кнопку "🐞" в правом верхнем углу',
-                                style: TextStyle(fontSize: 12),
-                              ),*/
-                            ],
-                          ),
-                        ),
-                      ],*/
                     ],
                   ),
                 ),
@@ -450,7 +397,9 @@ class _LoginScreenState extends State<LoginScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(),
+          CircularProgressIndicator(
+            color: primaryColor, // <-- ИЗМЕНЕНО ЗДЕСЬ (необязательно)
+          ),
           const SizedBox(height: 20),
           Text(
             isLogin ? 'Выполняется вход...' : 'Регистрация...',

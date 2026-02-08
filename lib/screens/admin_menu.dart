@@ -53,7 +53,7 @@ class _AdminMenuState extends State<AdminMenu> with SingleTickerProviderStateMix
   @override
 void initState() {
   super.initState();
-  _tabController = TabController(length: 6, vsync: this);
+  _tabController = TabController(length: 5, vsync: this);
   _loadSavedServerUrl();
   _loadAllData();
   _loadAdminSettings();
@@ -301,16 +301,42 @@ Future<void> _loadSavedServerUrl() async {
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _updateService(service.id);
-            },
-            child: const Text('Сохранить'),
+          // Измененные кнопки с одинаковой формой
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.black,
+                    backgroundColor: Colors.grey[200],
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Отмена'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    await _updateService(service.id);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color(0xFFf5bc38),
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Сохранить'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -359,16 +385,39 @@ Future<void> _deleteServiceSimple(int id) async {
       title: const Text('Удалить сервис'),
       content: const Text('Вы уверены, что хотите удалить этот сервис? Будут удалены все связанные заявки, механики и менеджеры этого сервиса.'),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Отмена'),
-        ),
-        ElevatedButton(
-          onPressed: () => Navigator.pop(context, true),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red,
-          ),
-          child: const Text('Удалить все'),
+        // Измененные кнопки с одинаковой формой
+        Row(
+          children: [
+            Expanded(
+              child: TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.black,
+                  backgroundColor: Colors.grey[200],
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text('Отмена'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Color(0xFFf5bc38),
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text('Удалить все'),
+              ),
+            ),
+          ],
         ),
       ],
     ),
@@ -509,18 +558,44 @@ Future<void> _createManager() async {
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _updateManager(manager.id, nameController.text.trim(),
-                  emailController.text.trim(), passwordController.text.trim(),
-                  serviceIdController.text.trim());
-            },
-            child: const Text('Сохранить'),
+          // Измененные кнопки с одинаковой формой
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.black,
+                    backgroundColor: Colors.grey[200],
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Отмена'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    await _updateManager(manager.id, nameController.text.trim(),
+                        emailController.text.trim(), passwordController.text.trim(),
+                        serviceIdController.text.trim());
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color(0xFFf5bc38),
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Сохранить'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -573,16 +648,39 @@ Future<void> _createManager() async {
         title: const Text('Удалить менеджера'),
         content: const Text('Вы уверены, что хотите удалить этого менеджера?'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            child: const Text('Удалить'),
+          // Измененные кнопки с одинаковой формой
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.black,
+                    backgroundColor: Colors.grey[200],
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Отмена'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color(0xFFf5bc38),
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Удалить'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -714,18 +812,44 @@ Future<void> _createManager() async {
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _updateMechanic(mechanic.id, nameController.text.trim(),
-                  emailController.text.trim(), passwordController.text.trim(),
-                  serviceIdController.text.trim());
-            },
-            child: const Text('Сохранить'),
+          // Измененные кнопки с одинаковой формой
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.black,
+                    backgroundColor: Colors.grey[200],
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Отмена'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    await _updateMechanic(mechanic.id, nameController.text.trim(),
+                        emailController.text.trim(), passwordController.text.trim(),
+                        serviceIdController.text.trim());
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color(0xFFf5bc38),
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Сохранить'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -778,16 +902,39 @@ Future<void> _createManager() async {
         title: const Text('Удалить механика'),
         content: const Text('Вы уверены, что хотите удалить этого механика?'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            child: const Text('Удалить'),
+          // Измененные кнопки с одинаковой формой
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.black,
+                    backgroundColor: Colors.grey[200],
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Отмена'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color(0xFFf5bc38),
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Удалить'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -820,16 +967,39 @@ Future<void> _createManager() async {
         title: const Text('Удалить заявителя'),
         content: const Text('Вы уверены, что хотите удалить этого заявителя? Все его заявки также будут удалены.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Отмена'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            child: const Text('Удалить'),
+          // Измененные кнопки с одинаковой формой
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.black,
+                    backgroundColor: Colors.grey[200],
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Отмена'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color(0xFFf5bc38),
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Удалить'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -895,7 +1065,7 @@ Future<void> _createManager() async {
               ),
               const Spacer(),
               IconButton(
-                icon: const Icon(Icons.refresh),
+                icon: const Icon(Icons.refresh, color: Colors.black),
                 onPressed: _loadApplicants,
                 tooltip: 'Обновить',
               ),
@@ -914,19 +1084,23 @@ Future<void> _createManager() async {
                         return Card(
                           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                           child: ListTile(
-                            leading: const Icon(Icons.person, color: Colors.blue),
+                            leading: const Icon(Icons.person, color: Colors.black),
                             title: Text(applicant.name),
                             subtitle: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text('Email: ${applicant.email}'),
                                 Text('Роль: ${applicant.role}'),
-                                //Text('Заявок: ${applicant.requests?.length ?? 0}'),
                               ],
                             ),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red),
-                              onPressed: () => _deleteApplicant(applicant.id),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.delete, color: Color(0xFFf5bc38)),
+                                  onPressed: () => _deleteApplicant(applicant.id),
+                                ),
+                              ],
                             ),
                             onTap: () {
                               _showApplicantDetails(applicant);
@@ -953,23 +1127,28 @@ Future<void> _createManager() async {
               Text('Email: ${applicant.email}'),
               Text('Роль: ${applicant.role}'),
               const SizedBox(height: 16),
-              /*const Text('Заявки:', style: TextStyle(fontWeight: FontWeight.bold)),
-              ...(applicant.requests ?? []).take(5).map((request) => 
-                ListTile(
-                  title: Text(request['problem'] ?? 'Описание не указано'),
-                  subtitle: Text('Статус: ${request['status'] ?? 'неизвестно'}'),
-                  dense: true,
-                )
-              ).toList(),
-              if ((applicant.requests?.length ?? 0) > 5)
-                const Text('... и другие заявки'),*/
             ],
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Закрыть'),
+          // Измененные кнопки с одинаковой формой
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.black,
+                    backgroundColor: Colors.grey[200],
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Закрыть'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -977,8 +1156,7 @@ Future<void> _createManager() async {
   }
 
   // Вкладка менеджеров
-  // Вкладка менеджеров
-Widget _buildManagersTab() {
+  Widget _buildManagersTab() {
   // Фильтруем сервисы без менеджеров
   final servicesWithoutManager = services.where((service) => service.manager == null).toList();
   
@@ -1088,9 +1266,21 @@ Widget _buildManagersTab() {
             ],
             
             const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _createManager,
-              child: const Text('Создать менеджера'),
+            // Измененная кнопка с одинаковой формой
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: _createManager,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Color(0xFFf5bc38),
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text('Создать менеджера'),
+              ),
             ),
           ],
         ),
@@ -1129,7 +1319,7 @@ Widget _buildManagersTab() {
                       return Card(
                         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                         child: ListTile(
-                          leading: const Icon(Icons.manage_accounts, color: Colors.purple),
+                          leading: const Icon(Icons.manage_accounts, color: Colors.black),
                           title: Text(
                             manager.name,
                             style: const TextStyle(fontWeight: FontWeight.bold),
@@ -1149,11 +1339,11 @@ Widget _buildManagersTab() {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
-                                icon: const Icon(Icons.edit, color: Colors.blue),
+                                icon: const Icon(Icons.edit, color: Colors.black),
                                 onPressed: () => _editManager(manager),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.delete, color: Colors.red),
+                                icon: const Icon(Icons.delete, color: Color(0xFFf5bc38)),
                                 onPressed: () => _deleteManager(manager.id),
                               ),
                             ],
@@ -1168,8 +1358,7 @@ Widget _buildManagersTab() {
 }
 
   // Вкладка механиков
-  // Вкладка механиков
-Widget _buildMechanicsTab() {
+  Widget _buildMechanicsTab() {
   return Column(
     children: [
       Padding(
@@ -1186,7 +1375,7 @@ Widget _buildMechanicsTab() {
             // Информация о доступных сервисах
             if (services.isNotEmpty) ...[
               Text('Всего сервисов: ${services.length}',
-                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+                style: const TextStyle(fontWeight: FontWeight.bold, color: Color.fromARGB(255, 0, 0, 0)),
               ),
               const SizedBox(height: 8),
             ],
@@ -1284,9 +1473,21 @@ Widget _buildMechanicsTab() {
             ],
             
             const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _createMechanic,
-              child: const Text('Создать механика'),
+            // Измененная кнопка с одинаковой формой
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: _createMechanic,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Color(0xFFf5bc38),
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text('Создать механика'),
+              ),
             ),
           ],
         ),
@@ -1326,7 +1527,7 @@ Widget _buildMechanicsTab() {
                       return Card(
                         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                         child: ListTile(
-                          leading: const Icon(Icons.engineering, color: Colors.orange),
+                          leading: const Icon(Icons.engineering, color: Colors.black),
                           title: Text(
                             mechanic.name,
                             style: const TextStyle(fontWeight: FontWeight.bold),
@@ -1346,11 +1547,11 @@ Widget _buildMechanicsTab() {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
-                                icon: const Icon(Icons.edit, color: Colors.blue),
+                                icon: const Icon(Icons.edit, color: Colors.black),
                                 onPressed: () => _editMechanic(mechanic),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.delete, color: Colors.red),
+                                icon: const Icon(Icons.delete, color: Color(0xFFf5bc38)),
                                 onPressed: () => _deleteMechanic(mechanic.id),
                               ),
                             ],
@@ -1394,9 +1595,21 @@ Widget _buildMechanicsTab() {
                 ),
               ),
               const SizedBox(height: 8),
-              ElevatedButton(
-                onPressed: _createService,
-                child: const Text('Создать сервис'),
+              // Измененная кнопка с одинаковой формой
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: _createService,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Color(0xFFf5bc38),
+                    foregroundColor: Colors.black,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Создать сервис'),
+                ),
               ),
             ],
           ),
@@ -1414,18 +1627,18 @@ Widget _buildMechanicsTab() {
                         return Card(
                           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                           child: ListTile(
-                            leading: const Icon(Icons.business, color: Colors.green),
+                            leading: const Icon(Icons.business, color: Colors.black),
                             title: Text(service.address),
                             subtitle: Text(service.workTime),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
-                                  icon: const Icon(Icons.edit, color: Colors.blue),
+                                  icon: const Icon(Icons.edit, color: Colors.black),
                                   onPressed: () => _editService(service),
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.red),
+                                  icon: const Icon(Icons.delete, color: Color(0xFFf5bc38)),
                                   onPressed: () => _deleteServiceSimple(service.id),
                                 ),
                               ],
@@ -1502,106 +1715,29 @@ Future<void> _loadServicesAndResetSelection() async {
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Закрыть'),
+          // Измененные кнопки с одинаковой формой
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.black,
+                    backgroundColor: Colors.grey[200],
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Закрыть'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
-
-  // Вкладка заявок
-  /*Widget _buildRequestsTab() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
-            children: [
-              const Text(
-                'Все заявки',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                onPressed: _loadRequests,
-                tooltip: 'Обновить',
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : requests.isEmpty
-                  ? const Center(child: Text('Заявок нет'))
-                  : ListView.builder(
-                      itemCount: requests.length,
-                      itemBuilder: (context, index) {
-                        final request = requests[index];
-                        return Card(
-                          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                          child: ListTile(
-                            leading: const Icon(Icons.list_alt, color: Colors.brown),
-                            title: Text('Заявка #${request.id}'),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Проблема: ${request.problem}'),
-                                Text('Статус: ${request.status}'),
-                                Text('Дата: ${request.submittedAt.day}.${request.submittedAt.month}.${request.submittedAt.year}'),
-                              ],
-                            ),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.info, color: Colors.blue),
-                              onPressed: () {
-                                _showRequestDetails(request);
-                              },
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-        ),
-      ],
-    );
-  }*/
-
-  /*void _showRequestDetails(Request request) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Детали заявки'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('ID: ${request.id}'),
-              Text('Проблема: ${request.problem}'),
-              Text('Статус: ${request.status}'),
-              Text('Дата создания: ${request.submittedAt.day}.${request.submittedAt.month}.${request.submittedAt.year} ${request.submittedAt.hour}:${request.submittedAt.minute.toString().padLeft(2, '0')}'),
-              if (request.closedAt != null)
-                Text('Дата закрытия: ${request.closedAt!.day}.${request.closedAt!.month}.${request.closedAt!.year}'),
-              Text('ID транспорта: ${request.transportId}'),
-              Text('ID заявителя: ${request.applicantId}'),
-              if (request.mechanicId != null)
-                Text('ID механика: ${request.mechanicId}'),
-              if (request.serviceId != null)
-                Text('ID сервиса: ${request.serviceId}'),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Закрыть'),
-          ),
-        ],
-      ),
-    );
-  }*/
 
   // Вкладка настроек
   Widget _buildSettingsTab() {
@@ -1639,20 +1775,40 @@ Future<void> _loadServicesAndResetSelection() async {
             ),
           ),
           const SizedBox(height: 32),
-          ElevatedButton(
-            onPressed: _saveAdminSettings,
-            child: const Text('Сохранить настройки'),
+          // Измененная кнопка с одинаковой формой
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: _saveAdminSettings,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFFf5bc38),
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text('Сохранить настройки'),
+            ),
           ),
           const SizedBox(height: 32),
           const Divider(),
           const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: _logout,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+          // Измененная кнопка с одинаковой формой
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: _logout,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFFf5bc38),
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text('Выйти из аккаунта'),
             ),
-            child: const Text('Выйти из аккаунта'),
           ),
         ],
       ),
@@ -1663,11 +1819,14 @@ Future<void> _loadServicesAndResetSelection() async {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Панель администратора'),
-        backgroundColor: Colors.red,
+        title: const Text(
+          'Панель администратора',
+          style: TextStyle(color: Colors.white),
+        ),
+        backgroundColor: Color(0xFFf5bc38),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _loadAllData,
             tooltip: 'Обновить все данные',
           ),
@@ -1675,13 +1834,15 @@ Future<void> _loadServicesAndResetSelection() async {
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white.withOpacity(0.7),
+          indicatorColor: Colors.white,
           tabs: const [
-            Tab(icon: Icon(Icons.people), text: 'Заявители'),
-            Tab(icon: Icon(Icons.manage_accounts), text: 'Менеджеры'),
-            Tab(icon: Icon(Icons.engineering), text: 'Механики'),
-            Tab(icon: Icon(Icons.business), text: 'Сервисы'),
-            //Tab(icon: Icon(Icons.list_alt), text: 'Заявки'),
-            Tab(icon: Icon(Icons.settings), text: 'Настройки'),
+            Tab(icon: Icon(Icons.people, color: Colors.white), text: 'Заявители'),
+            Tab(icon: Icon(Icons.manage_accounts, color: Colors.white), text: 'Менеджеры'),
+            Tab(icon: Icon(Icons.engineering, color: Colors.white), text: 'Механики'),
+            Tab(icon: Icon(Icons.business, color: Colors.white), text: 'Сервисы'),
+            Tab(icon: Icon(Icons.settings, color: Colors.white), text: 'Настройки'),
           ],
         ),
       ),
@@ -1692,7 +1853,6 @@ Future<void> _loadServicesAndResetSelection() async {
           _buildManagersTab(),
           _buildMechanicsTab(),
           _buildServicesTab(),
-          //_buildRequestsTab(),
           _buildSettingsTab(),
         ],
       ),

@@ -10,10 +10,17 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:intl/intl.dart';
 import '../global_config.dart';
 
 final String baseUrl = GlobalConfig.baseUrl;
 
+// Определяем кастомный цвет
+const Color primaryColor = Color(0xFFF5BC38);
+const Color primaryColorDark = Color(0xFFD4A22F); // Немного темнее для hover эффектов
+
+// Константа для формы кнопок
+const BorderRadius buttonBorderRadius = BorderRadius.all(Radius.circular(8));
 
 class ApplicantMenu extends StatefulWidget {
   const ApplicantMenu({super.key});
@@ -35,6 +42,8 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
   final TextEditingController _customProblemController = TextEditingController();
   bool _showCustomField = false;
   bool _isLoading = true;
+   DateTime? _selectedStartDate;
+  DateTime? _selectedEndDate;
 
   bool _isAccountPanelOpen = false;
   String _sortOrder = 'newest';
@@ -62,6 +71,7 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
   ];
 
   final Map<int, List<Mechanic>> _requestMechanics = {};
+  final Map<int, List<Map<String, dynamic>>> _requestProblems = {};
 
   @override
   void initState() {
@@ -131,6 +141,7 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
       
       for (var request in requests) {
         await _loadMechanicsForRequest(request.id);
+        await _loadProblemsForRequest(request.id);
       }
     }
     
@@ -174,6 +185,31 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
       }
     } catch (e) {
       print('Ошибка загрузки механиков для заявки: $e');
+    }
+  }
+
+  Future<void> _loadProblemsForRequest(int requestId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/requests/$requestId/problems'),
+      );
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final List<dynamic> problemsData = data['problems'] ?? [];
+        
+        setState(() {
+          _requestProblems[requestId] = problemsData
+              .map((p) => Map<String, dynamic>.from(p))
+              .toList();
+        });
+        
+        print('✅ Загружено проблем для заявки $requestId: ${problemsData.length}');
+      } else {
+        print('⚠️ Ошибка загрузки проблем для заявки $requestId: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Ошибка загрузки проблем для заявки: $e');
     }
   }
 
@@ -301,7 +337,7 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
     
     return CircleAvatar(
       radius: radius,
-      backgroundColor: Colors.blue,
+      backgroundColor: primaryColor,
       child: Icon(
         Icons.person,
         size: radius,
@@ -481,7 +517,7 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.blue,
+                        color: primaryColor,
                         borderRadius: const BorderRadius.only(
                           topLeft: Radius.circular(20),
                           topRight: Radius.circular(20),
@@ -635,6 +671,12 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                               _clearRequestForm();
                               Navigator.of(context).pop();
                             },
+                            style: OutlinedButton.styleFrom(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: buttonBorderRadius,
+                              ),
+                              foregroundColor: Colors.black,
+                            ),
                             child: const Text('Отмена'),
                           ),
                         ),
@@ -648,7 +690,11 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                               }
                             },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue,
+                              backgroundColor: primaryColor,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: buttonBorderRadius,
+                              ),
+                               foregroundColor: Colors.black,
                             ),
                             child: const Text('Создать заявку'),
                           ),
@@ -773,53 +819,44 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
               );
             }).toList(),
             
-            if (problems.any((p) => p.isOther == true))
-              ...problems.where((p) => p.isOther == true).map((otherOption) {
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: CheckboxListTile(
-                    title: Text(otherOption.name),
-                    subtitle: otherOption.description != null ? Text(otherOption.description!) : null,
-                    value: _showCustomField,
-                    onChanged: (bool? value) {
-                      setDialogState(() {
-                        _showCustomField = value ?? false;
-                        if (_showCustomField) {
-                          selectedProblems.add(otherOption);
-                        } else {
-                          selectedProblems.removeWhere((p) => p.isOther == true);
-                          _customProblemController.clear();
-                        }
-                      });
-                    },
+            // Вместо чекбокса "Другое" теперь показываем текстовое поле
+            Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(left: 16, top: 12),
+                    child: Text(
+                      'Другая проблема:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Colors.grey[800],
+                      ),
+                    ),
                   ),
-                );
-              }).toList(),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                    child: TextField(
+                      controller: _customProblemController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        hintText: 'Опишите свою проблему подробно...',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        contentPadding: const EdgeInsets.all(12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
         
-        if (_showCustomField)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 16),
-              const Text(
-                'Опишите свою проблему:',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _customProblemController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  hintText: 'Подробно опишите проблему...',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-        
-        if (selectedProblems.isNotEmpty)
+        if (selectedProblems.isNotEmpty || _customProblemController.text.isNotEmpty)
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -834,12 +871,22 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                   margin: const EdgeInsets.only(bottom: 4),
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.blue[50],
+                    color: primaryColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text('• ${problem.name}'),
                 );
               }).toList(),
+              if (_customProblemController.text.isNotEmpty)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 4, top: 4),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: primaryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text('• ${_customProblemController.text}'),
+                ),
             ],
           ),
       ],
@@ -911,7 +958,7 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
         .map((p) => p.id)
         .toList();
     
-    final customProblem = _showCustomField && _customProblemController.text.isNotEmpty 
+    final customProblem = _customProblemController.text.isNotEmpty 
         ? _customProblemController.text.trim() 
         : null;
     
@@ -979,17 +1026,46 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
       
       if (requestResponse.statusCode == 200) {
         try {
-          final requestData = json.decode(requestResponse.body);
-          final newRequest = Request.fromJson(requestData);
+          final requestJson = json.decode(requestResponse.body);
+          final newRequest = Request.fromJson(requestJson);
+          
+          // Создаем новый транспорт для этой заявки
+          final newTransport = Transport(
+            id: transportId,
+            type: _selectedTransportType,
+            serial: _serialController.text.trim(),
+            model: _modelController.text.trim(),
+            photo: photosJson,
+          );
+          
+          // Получаем сервис для этой заявки
+          final selectedService = services.firstWhere(
+            (s) => s.id == _selectedServiceId,
+            orElse: () => Service(
+              id: 0, 
+              address: 'Неизвестно', 
+              workTime: '',
+            ),
+          );
+          
+          // Загружаем проблемы для новой заявки
+          await _loadProblemsForRequest(newRequest.id);
           
           setState(() {
+            // Добавляем транспорт в список транспортов
+            transports.add(newTransport);
+            
+            // Добавляем заявку в список
             requests.insert(0, newRequest);
           });
           
           _clearRequestForm();
           _showSuccess('Заявка успешно создана!');
           
-          await _loadUserRequests();
+          // НЕ вызываем _loadUserRequests(), чтобы не перезагружать весь список
+          // Вместо этого сразу показываем детали новой заявки
+          _showRequestDetails(newRequest);
+          
         } catch (e) {
           print('Error parsing response: $e');
           _showError('Ошибка обработки ответа сервера');
@@ -1148,6 +1224,11 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
               Navigator.pop(context);
               _launchUrl(filePath);
             },
+            style: TextButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: buttonBorderRadius,
+              ),
+            ),
             child: const Text('Открыть в браузере'),
           ),
           TextButton(
@@ -1155,10 +1236,20 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
               Navigator.pop(context);
               await _showFilePath(context, filePath);
             },
+            style: TextButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: buttonBorderRadius,
+              ),
+            ),
             child: const Text('Показать путь к файлу'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: buttonBorderRadius,
+              ),
+            ),
             child: const Text('Отмена'),
           ),
         ],
@@ -1203,6 +1294,11 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: buttonBorderRadius,
+              ),
+            ),
             child: const Text('Закрыть'),
           ),
         ],
@@ -1211,16 +1307,32 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
   }
 
   void _showRequestDetails(Request request) {
+    // Находим транспорт для этой заявки
+    final transport = transports.firstWhere(
+      (t) => t.id == request.transportId,
+      orElse: () => Transport(id: 0, type: '', serial: '', model: ''),
+    );
+    
+    // Находим сервис для этой заявки
+    final service = request.serviceId != null 
+        ? services.firstWhere(
+            (s) => s.id == request.serviceId,
+            orElse: () => Service(id: 0, address: 'Не указан', workTime: ''),
+          )
+        : Service(id: 0, address: 'Не назначен', workTime: '');
+    
     final mechanics = _requestMechanics[request.id] ?? [];
+    final requestProblems = _requestProblems[request.id] ?? [];
     
     Navigator.of(context).push(
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (context) => RequestDetailsScreen(
           request: request,
-          transports: transports,
-          services: services,
+          transport: transport,
+          service: service,
           mechanics: mechanics,
+          requestProblems: requestProblems,
           onGenerateInvoice: () => _generateInvoice(request),
         ),
       ),
@@ -1472,53 +1584,91 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
   }
 
   void _showSortFilterDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Сортировка и фильтры'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Сортировка по дате:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Сортировка и фильтры'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Сортировка по дате:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  // Радиокнопки в виде переключаемых кнопок
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            setState(() {
+                              _sortOrder = 'newest';
+                            });
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _sortOrder == 'newest' 
+                              ? primaryColor 
+                              : Colors.grey[300],
+                            foregroundColor: _sortOrder == 'newest' 
+                              ? Colors.black 
+                              : Colors.grey[700],
+                            shape: RoundedRectangleBorder(
+                              borderRadius: buttonBorderRadius,
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            elevation: _sortOrder == 'newest' ? 2 : 0,
+                          ),
+                          child: const Text('Сначала новые'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            setState(() {
+                              _sortOrder = 'oldest';
+                            });
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _sortOrder == 'oldest' 
+                              ? primaryColor 
+                              : Colors.grey[300],
+                            foregroundColor: _sortOrder == 'oldest' 
+                              ? Colors.black 
+                              : Colors.grey[700],
+                            shape: RoundedRectangleBorder(
+                              borderRadius: buttonBorderRadius,
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            elevation: _sortOrder == 'oldest' ? 2 : 0,
+                          ),
+                          child: const Text('Сначала старые'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 20),
+                  const Divider(),
+                  const SizedBox(height: 12),
+                  
+                  const Text(
+                    'Фильтр по статусу:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    RadioListTile<String>(
-                      title: const Text('Сначала новые'),
-                      value: 'newest',
-                      groupValue: _sortOrder,
-                      onChanged: (String? value) {
-                        setState(() {
-                          _sortOrder = value!;
-                        });
-                        Navigator.of(context).pop();
-                      },
-                    ),
-                    RadioListTile<String>(
-                      title: const Text('Сначала старые'),
-                      value: 'oldest',
-                      groupValue: _sortOrder,
-                      onChanged: (String? value) {
-                        setState(() {
-                          _sortOrder = value!;
-                        });
-                        Navigator.of(context).pop();
-                      },
-                    ),
-                    
-                    const SizedBox(height: 16),
-                    const Divider(),
-                    const SizedBox(height: 8),
-                    
-                    const Text(
-                      'Фильтр по статусу:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    DropdownButtonFormField<String>(
+                    child: DropdownButtonFormField<String>(
                       initialValue: _statusFilter,
                       items: [
                         const DropdownMenuItem(
@@ -1536,20 +1686,33 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                         setState(() {
                           _statusFilter = newValue;
                         });
-                        Navigator.of(context).pop();
                       },
                       decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12),
+                      ),
+                      isExpanded: true,
+                      icon: const Icon(Icons.arrow_drop_down),
+                      style: const TextStyle(
+                        color: Colors.black87,
+                        fontSize: 16,
                       ),
                     ),
-                    
-                    const SizedBox(height: 12),
-                    
-                    const Text(
-                      'Фильтр по типу транспорта:',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  const Text(
+                    'Фильтр по типу транспорта:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    DropdownButtonFormField<String>(
+                    child: DropdownButtonFormField<String>(
                       initialValue: _transportFilter,
                       items: [
                         const DropdownMenuItem(
@@ -1567,38 +1730,70 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                         setState(() {
                           _transportFilter = newValue;
                         });
-                        Navigator.of(context).pop();
                       },
                       decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12),
+                      ),
+                      isExpanded: true,
+                      icon: const Icon(Icons.arrow_drop_down),
+                      style: const TextStyle(
+                        color: Colors.black87,
+                        fontSize: 16,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    setState(() {
-                      _sortOrder = 'newest';
-                      _statusFilter = null;
-                      _transportFilter = null;
-                    });
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text('Сбросить'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Закрыть'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
+            ),
+            actions: [
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _sortOrder = 'newest';
+                          _statusFilter = null;
+                          _transportFilter = null;
+                        });
+                        Navigator.of(context).pop();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.grey[200],
+                        foregroundColor: Colors.black87,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: buttonBorderRadius,
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: const Text('Сбросить'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryColor,
+                        foregroundColor: Colors.black,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: buttonBorderRadius,
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      child: const Text('Закрыть'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
 
   Widget _buildRequestCard(Request request) {
   final transport = transports.firstWhere(
@@ -1681,7 +1876,7 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: Colors.blue,
+                      color: Colors.black,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1737,64 +1932,293 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
   );
 }
 
-  @override
-  Widget build(BuildContext context) {
-    final filteredRequests = _getFilteredAndSortedRequests();
+// Метод для обработки выбора статуса механика
+Future<void> _selectMechanicStatus(String status) async {
+  // Для статусов "болеет" или "отпуск" показываем календарь
+  if (status == 'болеет' || status == 'отпуск') {
+    _showCalendarDialog(status);
+  } else {
+    // Для других статусов просто сохраняем
+    await _saveMechanicStatus(status);
+  }
+}
 
-    return Stack(
-      children: [
-        Scaffold(
-          appBar: null,
-          body: Column(
-            children: [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(16, 40, 16, 16),
-                decoration: BoxDecoration(
-                  color: Colors.blue,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
+// Метод для простого сохранения статуса без дат
+Future<void> _saveMechanicStatus(String status) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final mechanicId = prefs.getInt('user_id');
+    
+    if (mechanicId == null) {
+      _showError('Не удалось определить ID механика');
+      return;
+    }
+
+    final Map<String, dynamic> statusData = {
+      'mechanicId': mechanicId,
+      'status': status,
+      'updatedAt': DateTime.now().toIso8601String(),
+    };
+
+    final response = await http.put(
+      Uri.parse('$baseUrl/mechanics/$mechanicId/status'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(statusData),
+    );
+
+    if (response.statusCode == 200) {
+      _showSuccess('Статус обновлен: $status');
+    }
+  } catch (e) {
+    print('Ошибка сохранения статуса: $e');
+    _showError('Ошибка сохранения статуса: $e');
+  }
+}
+
+// Метод для показа диалога выбора дат
+void _showCalendarDialog(String status) {
+  DateTime? selectedStartDate;
+  DateTime? selectedEndDate;
+  
+  showDialog(
+    context: context,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: Text('Выберите период для "$status"'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Дата начала
+                  ListTile(
+                    leading: const Icon(Icons.calendar_today),
+                    title: const Text('Дата начала:'),
+                    subtitle: Text(
+                      selectedStartDate != null
+                          ? DateFormat('dd.MM.yyyy').format(selectedStartDate!)
+                          : 'Выберите дату',
                     ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Мои заявки',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
+                    onTap: () async {
+                      final DateTime? picked = await showDatePicker(
+                        context: context,
+                        initialDate: DateTime.now(),
+                        firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                      );
+                      if (picked != null) {
+                        setDialogState(() {
+                          selectedStartDate = picked;
+                        });
+                      }
+                    },
+                  ),
+                  
+                  // Дата окончания
+                  ListTile(
+                    leading: const Icon(Icons.event_available),
+                    title: const Text('Дата окончания:'),
+                    subtitle: Text(
+                      selectedEndDate != null
+                          ? DateFormat('dd.MM.yyyy').format(selectedEndDate!)
+                          : 'Выберите дату',
+                    ),
+                    onTap: () async {
+                      final DateTime? picked = await showDatePicker(
+                        context: context,
+                        initialDate: selectedStartDate ?? DateTime.now(),
+                        firstDate: selectedStartDate ?? DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                    
+                      );
+                      if (picked != null) {
+                        setDialogState(() {
+                          selectedEndDate = picked;
+                        });
+                      }
+                    },
+                  ),
+                  
+                  // Показ выбранного периода
+                  if (selectedStartDate != null && selectedEndDate != null)
+                    Container(
+                      margin: const EdgeInsets.only(top: 16),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        children: [
+                          const Text(
+                            'Выбранный период:',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '${DateFormat('dd.MM.yyyy').format(selectedStartDate!)} - ${DateFormat('dd.MM.yyyy').format(selectedEndDate!)}',
+                            style: const TextStyle(fontSize: 16),
+                          ),
+                          Text(
+                            '(${(selectedEndDate!.difference(selectedStartDate!).inDays + 1)} дней)',
+                            style: const TextStyle(color: Colors.grey),
+                          ),
+                        ],
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.refresh, color: Colors.white),
-                      onPressed: () {
-                        setState(() {
-                          _isLoading = true;
-                        });
-                        _loadUserData();
-                      },
-                      tooltip: 'Обновить',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.filter_list, color: Colors.white),
-                      onPressed: _showSortFilterDialog,
-                      tooltip: 'Сортировка и фильтры',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.account_circle, color: Colors.white),
-                      onPressed: () => setState(() => _isAccountPanelOpen = true),
-                      tooltip: 'Аккаунт',
-                    ),
-                  ],
-                ),
+                ],
               ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Отмена'),
+              ),
+              ElevatedButton(
+                onPressed: selectedStartDate != null && selectedEndDate != null
+                    ? () async {
+                        await _saveMechanicStatusWithPeriod(
+                          status, 
+                          selectedStartDate!, 
+                          selectedEndDate!
+                        );
+                        Navigator.pop(context);
+                      }
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  foregroundColor: Colors.black,
+                ),
+                child: const Text('Сохранить'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
+// Метод для сохранения статуса с периодом
+Future<void> _saveMechanicStatusWithPeriod(
+  String status, 
+  DateTime startDate, 
+  DateTime endDate
+) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final mechanicId = prefs.getInt('user_id');
+    
+    if (mechanicId == null) {
+      _showError('Не удалось определить ID механика');
+      return;
+    }
+
+    final Map<String, dynamic> statusData = {
+      'mechanicId': mechanicId,
+      'status': status,
+      'startDate': startDate.toIso8601String(),
+      'endDate': endDate.toIso8601String(),
+      'createdAt': DateTime.now().toIso8601String(),
+    };
+
+    // Сохраняем локально
+    await prefs.setString('mechanic_status_$mechanicId', json.encode(statusData));
+    
+    // Отправляем на сервер
+    final response = await http.post(
+      Uri.parse('$baseUrl/mechanics/status'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(statusData),
+    );
+
+    if (response.statusCode == 200) {
+      _showSuccess('Статус "$status" установлен на период '
+          '${DateFormat('dd.MM.yyyy').format(startDate)} - '
+          '${DateFormat('dd.MM.yyyy').format(endDate)}');
+    }
+  } catch (e) {
+    print('Ошибка сохранения статуса с периодом: $e');
+    _showError('Ошибка сохранения статуса: $e');
+  }
+}
+
+  @override
+  Widget build(BuildContext context) {
+  final filteredRequests = _getFilteredAndSortedRequests();
+
+  return Stack(
+    children: [
+      Scaffold(
+        appBar: null,
+        body: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 40, 16, 16),
+              decoration: BoxDecoration(
+                color: primaryColor,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        /*Text(
+                          'Мои заявки',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),*/
+                        if (userName != null && userName!.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Text(
+                              userName!,
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: const Color.fromARGB(255, 0, 0, 0).withOpacity(0.9),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.refresh, color: Colors.white),
+                    onPressed: () {
+                      setState(() {
+                        _isLoading = true;
+                      });
+                      _loadUserData();
+                    },
+                    tooltip: 'Обновить',
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.filter_list, color: Colors.white),
+                    onPressed: _showSortFilterDialog,
+                    tooltip: 'Сортировка и фильтры',
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.account_circle, color: Colors.white),
+                    onPressed: () => setState(() => _isAccountPanelOpen = true),
+                    tooltip: 'Аккаунт',
+                  ),
+                ],
+              ),
+            ),
               Expanded(
                 child: _isLoading
                     ? const Center(
@@ -1826,6 +2250,13 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                                 const SizedBox(height: 16),
                                 ElevatedButton(
                                   onPressed: _createRequest,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: primaryColor,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: buttonBorderRadius,
+                                    ),
+                                     foregroundColor: Colors.black,
+                                  ),
                                   child: const Text('Создать заявку'),
                                 ),
                               ],
@@ -1843,7 +2274,7 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
           ),
           floatingActionButton: FloatingActionButton(
             onPressed: _createRequest,
-            backgroundColor: Colors.blue,
+            backgroundColor: primaryColor,
             foregroundColor: Colors.white,
             child: const Icon(Icons.add),
           ),
@@ -1870,8 +2301,8 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                   Container(
                     height: 80,
                     padding: const EdgeInsets.fromLTRB(16, 40, 16, 16),
-                    decoration: const BoxDecoration(
-                      color: Colors.blue,
+                    decoration: BoxDecoration(
+                      color: primaryColor,
                     ),
                     child: Row(
                       children: [
@@ -1916,7 +2347,7 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                                   child: Container(
                                     padding: const EdgeInsets.all(4),
                                     decoration: const BoxDecoration(
-                                      color: Colors.blue,
+                                      color: primaryColor,
                                       shape: BoxShape.circle,
                                     ),
                                     child: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
@@ -1965,6 +2396,13 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
                             height: 50,
                             child: ElevatedButton(
                               onPressed: _updateProfile,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: primaryColor,
+                                foregroundColor: Colors.black,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: buttonBorderRadius,
+                                ),
+                              ),
                               child: const Text('Сохранить изменения'),
                             ),
                           ),
@@ -1983,17 +2421,19 @@ class _ApplicantMenuState extends State<ApplicantMenu> {
 
 class RequestDetailsScreen extends StatelessWidget {
   final Request request;
-  final List<Transport> transports;
-  final List<Service> services;
+  final Transport transport;
+  final Service service;
   final List<Mechanic> mechanics;
+  final List<Map<String, dynamic>> requestProblems;
   final VoidCallback onGenerateInvoice;
 
   const RequestDetailsScreen({
     super.key,
     required this.request,
-    required this.transports,
-    required this.services,
+    required this.transport,
+    required this.service,
     required this.mechanics,
+    required this.requestProblems,
     required this.onGenerateInvoice,
   });
 
@@ -2033,9 +2473,9 @@ class RequestDetailsScreen extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.blue[50],
+          color: primaryColor.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.blue[200]!),
+          border: Border.all(color: primaryColor.withOpacity(0.3)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2044,7 +2484,7 @@ class RequestDetailsScreen extends StatelessWidget {
               margin: const EdgeInsets.only(right: 8),
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.blue,
+                color: primaryColor,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
@@ -2072,7 +2512,7 @@ class RequestDetailsScreen extends StatelessWidget {
   }
 
   Widget _buildProblemsList() {
-    if (request.problems?.isNotEmpty ?? false) {
+    if (requestProblems.isNotEmpty) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -2081,11 +2521,11 @@ class RequestDetailsScreen extends StatelessWidget {
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
-              color: Colors.blue,
+              color: Colors.black87,
             ),
           ),
           const SizedBox(height: 12),
-          ...request.problems!.asMap().entries.map((entry) {
+          ...requestProblems.asMap().entries.map((entry) {
             final index = entry.key;
             final problem = entry.value;
             
@@ -2093,9 +2533,9 @@ class RequestDetailsScreen extends StatelessWidget {
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.blue[50],
+                color: primaryColor.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue[200]!),
+                border: Border.all(color: primaryColor.withOpacity(0.3)),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2104,7 +2544,7 @@ class RequestDetailsScreen extends StatelessWidget {
                     margin: const EdgeInsets.only(right: 8),
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: Colors.blue,
+                      color: primaryColor,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
@@ -2161,7 +2601,7 @@ class RequestDetailsScreen extends StatelessWidget {
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
-            color: Colors.blue,
+            color: Colors.black87,
           ),
         ),
         const SizedBox(height: 12),
@@ -2195,20 +2635,10 @@ class RequestDetailsScreen extends StatelessWidget {
     );
   }
 
+  
+
   @override
   Widget build(BuildContext context) {
-    final transport = transports.firstWhere(
-      (t) => t.id == request.transportId,
-      orElse: () => Transport(id: 0, type: 'Неизвестно', serial: 'Неизвестно', model: 'Неизвестно'),
-    );
-
-    final service = request.serviceId != null 
-        ? services.firstWhere(
-            (s) => s.id == request.serviceId,
-            orElse: () => Service(id: 0, address: 'Не указан', workTime: ''),
-          )
-        : Service(id: 0, address: 'Не назначен', workTime: '');
-
     final status = _getRequestStatus(request);
     final statusColor = _getStatusColor(request);
 
@@ -2219,6 +2649,8 @@ class RequestDetailsScreen extends StatelessWidget {
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text('Детали заявки #${request.id}'),
+        backgroundColor: primaryColor,
+        foregroundColor: Colors.white,
         actions: [
           if (status == 'закрыта')
             IconButton(
@@ -2274,7 +2706,7 @@ class RequestDetailsScreen extends StatelessWidget {
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: Colors.blue,
+                color: Colors.black87,
               ),
             ),
             const SizedBox(height: 12),
@@ -2328,6 +2760,7 @@ class RequestDetailsScreen extends StatelessWidget {
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
+                            color: Colors.black87,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -2342,7 +2775,8 @@ class RequestDetailsScreen extends StatelessWidget {
                 ],
               ),
             
-            if (transport.photo != null && transport.photo!.isNotEmpty)
+            // ИЗМЕНЕНИЕ: Показываем фото транспорта только если они есть и не пустые
+            if (transport.photo != null && transport.photo!.isNotEmpty && transport.photo != '[]')
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -2352,6 +2786,7 @@ class RequestDetailsScreen extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
+                      color: Colors.black87,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -2364,7 +2799,7 @@ class RequestDetailsScreen extends StatelessWidget {
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: Colors.blue,
+                color: Colors.black87,
               ),
             ),
             const SizedBox(height: 12),
@@ -2373,20 +2808,6 @@ class RequestDetailsScreen extends StatelessWidget {
             _buildDetailRow('Серийный номер:', transport.serial),
             
             const SizedBox(height: 32),
-            
-            Center(
-              child: ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                ),
-                child: const Text(
-                  'Закрыть',
-                  style: TextStyle(fontSize: 16),
-                ),
-              ),
-            ),
           ],
         ),
       ),
@@ -2631,5 +3052,5 @@ class Mechanic {
       name: json['name'] ?? 'Неизвестно',
       email: json['email'] ?? 'Неизвестно',
     );
-  }
+  }  
 }

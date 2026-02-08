@@ -9,7 +9,6 @@ import '../global_config.dart';
 
 final String baseUrl = GlobalConfig.baseUrl;
 
-
 class MechanicMenu extends StatefulWidget {
   const MechanicMenu({super.key});
 
@@ -41,7 +40,7 @@ class _MechanicMenuState extends State<MechanicMenu> {
   final TextEditingController _passwordController = TextEditingController();
 
   // Добавлен список статусов для механика
-  final List<String> _statusList = ['новая', 'принята', 'в работе', 'временно отклонена', 'завершена'];
+  final List<String> _statusList = ['в работе', 'временно отклонена', 'завершена'];
   final Map<int, String> _requestCompletionStatus = {}; // requestId -> "completed" или "not_completed"
   final Map<int, List<RepairDetail>> _repairDetailsByRequest = {}; // requestId -> список деталей ремонта
 
@@ -116,7 +115,7 @@ class _MechanicMenuState extends State<MechanicMenu> {
 
     return CircleAvatar(
       radius: radius,
-      backgroundColor: Colors.green,
+      backgroundColor: Color(0xFFf5bc38),
       child: Icon(
         Icons.person,
         size: radius,
@@ -565,16 +564,42 @@ class _MechanicMenuState extends State<MechanicMenu> {
                 ],
               ),
               actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Отмена'),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    _updateRequestStatus(request, selectedStatus);
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text('Сохранить'),
+                // Измененные кнопки с одинаковой формой
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.black,
+                          backgroundColor: Colors.grey[200],
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text('Отмена'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          _updateRequestStatus(request, selectedStatus);
+                          Navigator.of(context).pop();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xFFf5bc38),
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text('Сохранить'),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             );
@@ -795,7 +820,7 @@ class _MechanicMenuState extends State<MechanicMenu> {
                       
                       const SizedBox(height: 16),
                       
-                      // Кнопка добавления детали
+                      // Кнопка добавления детали с одинаковой формой
                       ElevatedButton.icon(
                         onPressed: () {
                           if (partNameController.text.trim().isEmpty) {
@@ -834,6 +859,14 @@ class _MechanicMenuState extends State<MechanicMenu> {
                         },
                         icon: const Icon(Icons.add),
                         label: const Text('Добавить деталь'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xFFf5bc38),
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        ),
                       ),
                       
                       const SizedBox(height: 16),
@@ -882,41 +915,93 @@ class _MechanicMenuState extends State<MechanicMenu> {
                 ),
               ),
               actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Отмена'),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    if (repairDetails.isEmpty) {
-                      final bool? confirm = await showDialog<bool>(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Подтверждение'),
-                          content: const Text('Вы не добавили детали ремонта. Завершить работу без деталей?'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(false),
-                              child: const Text('Отмена'),
-                            ),
-                            ElevatedButton(
-                              onPressed: () => Navigator.of(context).pop(true),
-                              child: const Text('Завершить'),
-                            ),
-                          ],
+                // Кнопки "Отмена" и "Завершить работу" с одинаковой формой
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.black,
+                          backgroundColor: Colors.grey[200],
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                         ),
-                      );
-                      
-                      if (confirm == true) {
-                        Navigator.of(context).pop(); // Закрыть диалог деталей
-                        await _completeRequestWithoutDetails(request);
-                      }
-                    } else {
-                      Navigator.of(context).pop(); // Закрыть диалог деталей
-                      await _completeRequest(request, repairDetails);
-                    }
-                  },
-                  child: const Text('Завершить работу'),
+                        child: const Text('Отмена'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          if (repairDetails.isEmpty) {
+                            final bool? confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Подтверждение'),
+                                content: const Text('Вы не добавили детали ремонта. Завершить работу без деталей?'),
+                                actions: [
+                                  // Кнопки в подтверждающем диалоге тоже одинаковой формы
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: TextButton(
+                                          onPressed: () => Navigator.of(context).pop(false),
+                                          style: TextButton.styleFrom(
+                                            foregroundColor: Colors.black,
+                                            backgroundColor: Colors.grey[200],
+                                            padding: const EdgeInsets.symmetric(vertical: 12),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                          ),
+                                          child: const Text('Отмена'),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: ElevatedButton(
+                                          onPressed: () => Navigator.of(context).pop(true),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Color(0xFFf5bc38),
+                                            foregroundColor: Colors.black,
+                                            padding: const EdgeInsets.symmetric(vertical: 12),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                          ),
+                                          child: const Text('Завершить'),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            );
+                            
+                            if (confirm == true) {
+                              Navigator.of(context).pop(); // Закрыть диалог деталей
+                              await _completeRequestWithoutDetails(request);
+                            }
+                          } else {
+                            Navigator.of(context).pop(); // Закрыть диалог деталей
+                            await _completeRequest(request, repairDetails);
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xFFf5bc38),
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text('Завершить работу'),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             );
@@ -951,22 +1036,45 @@ class _MechanicMenuState extends State<MechanicMenu> {
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Отмена'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                if (rejectionController.text.trim().isEmpty) {
-                  _showError('Укажите причину отклонения');
-                  return;
-                }
-                Navigator.of(context).pop(true);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orange,
-              ),
-              child: const Text('Отклонить временно'),
+            // Измененные кнопки с одинаковой формой
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.black,
+                      backgroundColor: Colors.grey[200],
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('Отмена'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      if (rejectionController.text.trim().isEmpty) {
+                        _showError('Укажите причину отклонения');
+                        return;
+                      }
+                      Navigator.of(context).pop(true);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Color(0xFFf5bc38),
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('Отклонить временно'),
+                  ),
+                ),
+              ],
             ),
           ],
         );
@@ -1132,88 +1240,71 @@ class _MechanicMenuState extends State<MechanicMenu> {
         borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.all(16),
-          child: Column(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.shade300),
+              // Фото транспорта
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: _buildTransportImage(transport.photo),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Название транспорта
+                    Text(
+                      transport.model,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color.fromARGB(255, 0, 0, 0),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    child: _buildTransportImage(transport.photo),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    const SizedBox(height: 8),
+                    // Описание проблемы
+                    Text(
+                      (request.problemDescription?.isNotEmpty ?? false) 
+                        ? _getFormattedProblemPreview(request.problemDescription!)
+                        : _getFormattedProblemPreview(request.problem),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.black87,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 8),
+                    // Статус заявки
+                    Row(
                       children: [
-                        Text(
-                          transport.model,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green,
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: statusColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: statusColor),
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 8),
-                        // Используем тот же метод форматирования, что и у менеджера и заявителя
-                        Text(
-                          (request.problemDescription?.isNotEmpty ?? false) 
-                            ? _getFormattedProblemPreview(request.problemDescription!)
-                            : _getFormattedProblemPreview(request.problem),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Colors.black87,
+                          child: Text(
+                            status.toUpperCase(),
+                            style: TextStyle(
+                              color: statusColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 8),
                       ],
                     ),
-                  ),
-                ],
-              ),
-              
-              // Кнопка для завершения работы с деталями
-              if (status != 'закрыта' && status != 'временно отклонена' && !isCompletedByMe)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: ElevatedButton.icon(
-                    onPressed: () => _showCompleteWithDetailsDialog(request),
-                    icon: const Icon(Icons.build),
-                    label: const Text('Завершить работу с деталями'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      minimumSize: const Size(double.infinity, 48),
-                    ),
-                  ),
-                ),
-              
-              const SizedBox(height: 8),
-              
-              // Статус заявки
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: statusColor),
-                ),
-                child: Text(
-                  status.toUpperCase(),
-                  style: TextStyle(
-                    color: statusColor,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  ],
                 ),
               ),
             ],
@@ -1289,73 +1380,103 @@ class _MechanicMenuState extends State<MechanicMenu> {
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Сортировка и фильтры'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Сортировка по дате:', style: TextStyle(fontWeight: FontWeight.bold)),
-                RadioListTile<String>(
-                  title: const Text('Сначала новые'),
-                  value: 'newest',
-                  groupValue: _sortOrder,
-                  onChanged: (String? value) {
-                    setState(() {
-                      _sortOrder = value!;
-                    });
-                    Navigator.of(context).pop();
-                  },
-                ),
-                RadioListTile<String>(
-                  title: const Text('Сначала старые'),
-                  value: 'oldest',
-                  groupValue: _sortOrder,
-                  onChanged: (String? value) {
-                    setState(() {
-                      _sortOrder = value!;
-                    });
-                    Navigator.of(context).pop();
-                  },
-                ),
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Сортировка и фильтры'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Сортировка по дате:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    RadioListTile<String>(
+                      title: const Text('Сначала новые'),
+                      value: 'newest',
+                      groupValue: _sortOrder,
+                      onChanged: (String? value) {
+                        setState(() {
+                          _sortOrder = value!;
+                        });
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                    RadioListTile<String>(
+                      title: const Text('Сначала старые'),
+                      value: 'oldest',
+                      groupValue: _sortOrder,
+                      onChanged: (String? value) {
+                        setState(() {
+                          _sortOrder = value!;
+                        });
+                        Navigator.of(context).pop();
+                      },
+                    ),
 
-                const SizedBox(height: 16),
-                const Divider(),
-                const SizedBox(height: 8),
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const SizedBox(height: 8),
 
-                const Text('Фильтр по статусу:', style: TextStyle(fontWeight: FontWeight.bold)),
-                DropdownButtonFormField<String>(
-                  value: _statusFilter,
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text('Все статусы')),
-                    ..._statusList.map((status) => DropdownMenuItem(value: status, child: Text(status))),
+                    const Text('Фильтр по статусу:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    DropdownButtonFormField<String>(
+                      value: _statusFilter,
+                      items: [
+                        const DropdownMenuItem(value: null, child: Text('Все статусы')),
+                        ..._statusList.map((status) => DropdownMenuItem(value: status, child: Text(status))),
+                      ],
+                      onChanged: (String? newValue) {
+                        setState(() => _statusFilter = newValue);
+                        Navigator.of(context).pop();
+                      },
+                      decoration: const InputDecoration(border: OutlineInputBorder()),
+                    ),
                   ],
-                  onChanged: (String? newValue) {
-                    setState(() => _statusFilter = newValue);
-                    Navigator.of(context).pop();
-                  },
-                  decoration: const InputDecoration(border: OutlineInputBorder()),
+                ),
+              ),
+              actions: [
+                // Измененные кнопки с одинаковой формой
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () {
+                          setState(() {
+                            _sortOrder = 'newest';
+                            _statusFilter = null;
+                            _searchController.clear();
+                          });
+                          Navigator.of(context).pop();
+                        },
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.black,
+                          backgroundColor: Colors.grey[200],
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text('Сбросить'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xFFf5bc38),
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text('Применить'),
+                      ),
+                    ),
+                  ],
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _sortOrder = 'newest';
-                  _statusFilter = null;
-                  _searchController.clear();
-                });
-                Navigator.of(context).pop();
-              },
-              child: const Text('Сбросить'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Применить'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
@@ -1422,14 +1543,22 @@ class _MechanicMenuState extends State<MechanicMenu> {
   }
 
   Future<void> _logout() async {
+    setState(() => _isAccountPanelOpen = false);
+    await Future.delayed(const Duration(milliseconds: 300));
+    
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
+    
     if (mounted) {
-      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+      Navigator.pushNamedAndRemoveUntil(
+        context, 
+        '/login', 
+        (route) => false
+      );
     }
   }
 
-  // Панель профиля
+  // Панель профиля (сделана точно так же как у менеджера)
   Widget _buildProfilePanel() {
     return Material(
       color: Colors.transparent,
@@ -1447,160 +1576,150 @@ class _MechanicMenuState extends State<MechanicMenu> {
         ),
         child: Column(
           children: [
+            // Кастомный заголовок для панели профиля (как у менеджера)
             Container(
-              height: 200,
-              decoration: BoxDecoration(
-                color: Colors.green[700],
+              height: 80,
+              padding: const EdgeInsets.fromLTRB(16, 40, 16, 16),
+              decoration: const BoxDecoration(
+                color: Color(0xFFf5bc38),
               ),
-              child: Stack(
+              child: Row(
                 children: [
-                  Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        GestureDetector(
-                          onTap: _pickImage,
-                          child: Stack(
-                            children: [
-                              _buildAvatar(userPhoto, 50),
-                              Positioned(
-                                bottom: 0,
-                                right: 0,
-                                child: Container(
-                                  width: 36,
-                                  height: 36,
-                                  decoration: BoxDecoration(
-                                    color: Colors.green,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white, width: 2),
-                                  ),
-                                  child: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          userName ?? 'Механик',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          userEmail ?? 'Email не указан',
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => setState(() => _isAccountPanelOpen = false),
+                  ),
+                  const SizedBox(width: 16),
+                  const Text(
+                    'Профиль',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                  Positioned(
-                    top: 16,
-                    left: 16,
-                    child: IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => setState(() => _isAccountPanelOpen = false),
-                    ),
-                  ),
-                  Positioned(
-                    top: 16,
-                    right: 16,
-                    child: IconButton(
-                      icon: const Icon(Icons.logout, color: Colors.white),
-                      onPressed: _logout,
-                      tooltip: 'Выйти из аккаунта',
-                    ),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.logout, color: Colors.white),
+                    onPressed: _logout,
+                    tooltip: 'Выйти',
                   ),
                 ],
               ),
             ),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20.0),
+                padding: const EdgeInsets.all(16.0),
                 child: Column(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.green[50],
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
+                    GestureDetector(
+                      onTap: _pickImage,
+                      child: Stack(
                         children: [
-                          Icon(Icons.business, color: Colors.green[700]),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Адрес сервиса',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.green[700],
-                                  ),
-                                ),
-                                Text(
-                                  serviceAddress ?? 'Адрес не указан',
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                              ],
+                          _buildAvatar(userPhoto, 50),
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFf5bc38),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 30),
-                    TextField(
-                        controller: _nameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Имя',
-                          prefixIcon: Icon(Icons.person),
-                          border: OutlineInputBorder(),
-                        )),
-                    const SizedBox(height: 16),
-                    TextField(
-                        controller: _emailController,
-                        decoration: const InputDecoration(
-                          labelText: 'Email',
-                          prefixIcon: Icon(Icons.email),
-                          border: OutlineInputBorder(),
-                        )),
-                    const SizedBox(height: 16),
-                    TextField(
-                        controller: _passwordController,
-                        decoration: const InputDecoration(
-                          labelText: 'Новый пароль (оставьте пустым, если не хотите менять)',
-                          prefixIcon: Icon(Icons.lock),
-                          border: OutlineInputBorder(),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Нажмите на фото для изменения',
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    
+                    // Информация о сервисе (как у менеджера)
+                    if (serviceAddress != null)
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 20),
+                        decoration: BoxDecoration(
+                          color: Color(0xFFf5bc38).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        obscureText: true),
-                    const SizedBox(height: 30),
-                    SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: ElevatedButton(
-                          onPressed: _updateProfile,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            foregroundColor: Colors.green[700],
-                            side: BorderSide(color: Colors.green[700]!),
-                            elevation: 2,
-                          ),
-                          child: const Text(
-                            'Сохранить изменения',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                        child: Row(
+                          children: [
+                            Icon(Icons.business, color: Color(0xFFf5bc38)),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Адрес сервиса',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFFf5bc38),
+                                    ),
+                                  ),
+                                  Text(
+                                    serviceAddress!,
+                                    style: const TextStyle(fontSize: 14, color: Colors.black),
+                                  ),
+                                ],
+                              ),
                             ),
+                          ],
+                        ),
+                      ),
+                    
+                    TextField(
+                      controller: _nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Имя',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _emailController,
+                      decoration: const InputDecoration(
+                        labelText: 'Email',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _passwordController,
+                      decoration: const InputDecoration(
+                        labelText: 'Новый пароль (оставьте пустым, если не хотите менять)',
+                        border: OutlineInputBorder(),
+                      ),
+                      obscureText: true,
+                    ),
+                    const SizedBox(height: 30),
+                    // Измененная кнопка с одинаковой формой
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: _updateProfile,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xFFf5bc38),
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                        )),
+                        ),
+                        child: const Text('Сохранить изменения'),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1613,50 +1732,87 @@ class _MechanicMenuState extends State<MechanicMenu> {
 
   @override
   Widget build(BuildContext context) {
-    final filteredRequests = _getFilteredAndSortedRequests();
+  final filteredRequests = _getFilteredAndSortedRequests();
 
-    return Stack(
-      children: [
-        Scaffold(
-          appBar: AppBar(
-            title: const Text('Панель механика'),
-            backgroundColor: Colors.green,
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                onPressed: () {
-                  setState(() => _isLoading = true);
-                  _loadAllData().then((_) => setState(() => _isLoading = false));
-                },
-                tooltip: 'Обновить',
+  return Stack(
+    children: [
+      Scaffold(
+        appBar: null, // Убираем стандартный AppBar
+        body: Column(
+          children: [
+            // Кастомный заголовок вместо AppBar
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 40, 16, 16),
+              decoration: BoxDecoration(
+                color: Color(0xFFf5bc38),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
-              IconButton(
-                icon: const Icon(Icons.filter_list),
-                onPressed: _showSortFilterDialog,
-                tooltip: 'Сортировка и фильтры',
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (userName != null && userName!.isNotEmpty)
+                          Text(
+                            userName!,
+                            style: TextStyle(
+                              fontSize: 24, // Большой размер
+                              fontWeight: FontWeight.bold, // Жирный шрифт
+                              color: const Color.fromARGB(255, 0, 0, 0),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        const SizedBox(height: 4),
+                      ],
+                    ),
+                  ),
+                    IconButton(
+                      icon: const Icon(Icons.refresh, color: Colors.white),
+                      onPressed: () {
+                        setState(() {
+                          _isLoading = true;
+                        });
+                        _loadAllData().then((_) => setState(() => _isLoading = false));
+                      },
+                      tooltip: 'Обновить',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.filter_list, color: Colors.white),
+                      onPressed: _showSortFilterDialog,
+                      tooltip: 'Сортировка и фильтры',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.account_circle, color: Colors.white),
+                      onPressed: () => setState(() => _isAccountPanelOpen = true),
+                      tooltip: 'Профиль',
+                    ),
+                  ],
+                ),
               ),
-              IconButton(
-                icon: const Icon(Icons.account_circle),
-                onPressed: () => setState(() => _isAccountPanelOpen = true),
-                tooltip: 'Профиль',
-              ),
-            ],
-          ),
-          body: Column(
-            children: [
+              
+              // Поле поиска
               Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: TextField(
                   controller: _searchController,
                   decoration: InputDecoration(
                     hintText: 'Поиск заявок...',
-                    prefixIcon: const Icon(Icons.search),
+                    prefixIcon: const Icon(Icons.search, color: Color(0xFFf5bc38)),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                     suffixIcon: _searchController.text.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.clear),
+                            icon: const Icon(Icons.clear, color: Color(0xFFf5bc38)),
                             onPressed: () {
                               setState(() {
                                 _searchController.clear();
@@ -1668,11 +1824,30 @@ class _MechanicMenuState extends State<MechanicMenu> {
                   onChanged: (value) => setState(() {}),
                 ),
               ),
+              
+              // Список заявок
               Expanded(
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : filteredRequests.isEmpty
-                        ? const Center(child: Text('Заявок нет'))
+                        ? const Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.list_alt, size: 80, color: Colors.grey),
+                                SizedBox(height: 16),
+                                Text(
+                                  'Заявок нет',
+                                  style: TextStyle(fontSize: 18, color: Colors.grey),
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  'Нет назначенных заявок',
+                                  style: TextStyle(color: Colors.grey),
+                                ),
+                              ],
+                            ),
+                          )
                         : ListView.builder(
                             itemCount: filteredRequests.length,
                             itemBuilder: (context, index) {
@@ -1680,25 +1855,27 @@ class _MechanicMenuState extends State<MechanicMenu> {
                               return _buildRequestCard(request);
                             },
                           ),
-              ),
-            ],
-          ),
+            ),
+          ],
+        ),
+      ),
+
+      // затемнение фона (как у менеджера)
+      if (_isAccountPanelOpen)
+        Container(
+          color: Colors.black54,
         ),
 
-        if (_isAccountPanelOpen)
-          Container(
-            color: Colors.black54,
-          ),
-
-        if (_isAccountPanelOpen)
-          Positioned(
-            right: 0,
-            top: 0,
-            bottom: 0,
-            child: _buildProfilePanel(),
-          ),
-      ],
-    );
+      // панель профиля (как у менеджера)
+      if (_isAccountPanelOpen)
+        Positioned(
+          right: 0,
+          top: 0,
+          bottom: 0,
+          child: _buildProfilePanel(),
+        ),
+    ],
+  );
   }
 }
 
@@ -1745,9 +1922,9 @@ class RequestDetailsScreen extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.green[50],
+          color: Color(0xFFf5bc38).withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.green[200]!),
+          border: Border.all(color: Color(0xFFf5bc38).withOpacity(0.3)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1756,7 +1933,7 @@ class RequestDetailsScreen extends StatelessWidget {
               margin: const EdgeInsets.only(right: 8),
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.green,
+                color: Color(0xFFf5bc38),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
@@ -1797,7 +1974,7 @@ class RequestDetailsScreen extends StatelessWidget {
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
-            color: Colors.green,
+            color: Color.fromARGB(255, 0, 0, 0),
           ),
         ),
         const SizedBox(height: 12),
@@ -1983,6 +2160,7 @@ class RequestDetailsScreen extends StatelessWidget {
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text('Детали заявки #${request.id}'),
+        backgroundColor: Color(0xFFf5bc38),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -2032,7 +2210,7 @@ class RequestDetailsScreen extends StatelessWidget {
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: Colors.green,
+                color: Color.fromARGB(255, 0, 0, 0),
               ),
             ),
             const SizedBox(height: 12),
@@ -2118,7 +2296,7 @@ class RequestDetailsScreen extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: Colors.green,
+                      color: Color.fromARGB(255, 0, 0, 0),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -2193,7 +2371,7 @@ class RequestDetailsScreen extends StatelessWidget {
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: Colors.green,
+                color: Color.fromARGB(255, 0, 0, 0),
               ),
             ),
             const SizedBox(height: 12),
@@ -2213,13 +2391,13 @@ class RequestDetailsScreen extends StatelessWidget {
                       padding: const EdgeInsets.all(16),
                       margin: const EdgeInsets.only(bottom: 16),
                       decoration: BoxDecoration(
-                        color: Colors.green[50],
+                        color: Color(0xFFf5bc38).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.green),
+                        border: Border.all(color: Color(0xFFf5bc38)),
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.check_circle, color: Colors.green, size: 30),
+                          Icon(Icons.check_circle, color: Color(0xFFf5bc38), size: 30),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
@@ -2227,7 +2405,7 @@ class RequestDetailsScreen extends StatelessWidget {
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.green[800],
+                                color: Color(0xFFf5bc38),
                               ),
                             ),
                           ),
@@ -2244,8 +2422,12 @@ class RequestDetailsScreen extends StatelessWidget {
                               child: ElevatedButton(
                                 onPressed: onUpdateStatus,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.orange,
+                                  backgroundColor: Color(0xFFf5bc38),
+                                  foregroundColor: Colors.black,
                                   padding: const EdgeInsets.symmetric(vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
                                 ),
                                 child: const Text(
                                   'Сменить статус',
@@ -2258,8 +2440,12 @@ class RequestDetailsScreen extends StatelessWidget {
                               child: ElevatedButton(
                                 onPressed: onTemporaryReject,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.red,
+                                  backgroundColor: Color(0xFFf5bc38),
+                                  foregroundColor: Colors.black,
                                   padding: const EdgeInsets.symmetric(vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
                                 ),
                                 child: const Text(
                                   'Временно отклонить',
@@ -2276,8 +2462,12 @@ class RequestDetailsScreen extends StatelessWidget {
                               child: ElevatedButton(
                                 onPressed: onCompleteRequest,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
+                                  backgroundColor: Color(0xFFf5bc38),
+                                  foregroundColor: Colors.black,
                                   padding: const EdgeInsets.symmetric(vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
                                 ),
                                 child: const Text(
                                   'Завершить мою работу',
@@ -2296,8 +2486,12 @@ class RequestDetailsScreen extends StatelessWidget {
                           child: ElevatedButton(
                             onPressed: onUpdateStatus,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.orange,
+                              backgroundColor: Color(0xFFf5bc38),
+                              foregroundColor: Colors.black,
                               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
                             child: const Text(
                               'Сменить статус',
